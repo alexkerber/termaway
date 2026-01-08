@@ -18,6 +18,17 @@ let contextMenuTarget = null;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY = 1000;
 const SCROLLBACK_LINES = 10000;
+const DEFAULT_FONT_SIZE = 14;
+const MIN_FONT_SIZE = 10;
+const MAX_FONT_SIZE = 24;
+
+// Settings state
+let currentFontSize = parseInt(localStorage.getItem('fontSize')) || DEFAULT_FONT_SIZE;
+let currentTheme = localStorage.getItem('theme') || 'dark';
+let activeModifiers = { ctrl: false, alt: false };
+let quickCommands = JSON.parse(localStorage.getItem('quickCommands')) || [
+  'ls -la', 'git status', 'git diff', 'npm run dev'
+];
 
 // DOM Elements
 const terminalContainer = document.getElementById('terminal');
@@ -34,12 +45,61 @@ const modalCancel = document.getElementById('modal-cancel');
 const modalConfirm = document.getElementById('modal-confirm');
 const contextMenu = document.getElementById('context-menu');
 
+// Theme definitions
+const darkTheme = {
+  background: '#0d1117',
+  foreground: '#e6edf3',
+  cursor: '#58a6ff',
+  cursorAccent: '#0d1117',
+  selectionBackground: 'rgba(88, 166, 255, 0.3)',
+  black: '#484f58',
+  red: '#ff7b72',
+  green: '#3fb950',
+  yellow: '#d29922',
+  blue: '#58a6ff',
+  magenta: '#bc8cff',
+  cyan: '#39c5cf',
+  white: '#b1bac4',
+  brightBlack: '#6e7681',
+  brightRed: '#ffa198',
+  brightGreen: '#56d364',
+  brightYellow: '#e3b341',
+  brightBlue: '#79c0ff',
+  brightMagenta: '#d2a8ff',
+  brightCyan: '#56d4dd',
+  brightWhite: '#f0f6fc',
+};
+
+const lightTheme = {
+  background: '#ffffff',
+  foreground: '#24292f',
+  cursor: '#0969da',
+  cursorAccent: '#ffffff',
+  selectionBackground: 'rgba(9, 105, 218, 0.3)',
+  black: '#24292f',
+  red: '#cf222e',
+  green: '#1a7f37',
+  yellow: '#9a6700',
+  blue: '#0969da',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#6e7781',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#116329',
+  brightYellow: '#7d4e00',
+  brightBlue: '#0550ae',
+  brightMagenta: '#6639ba',
+  brightCyan: '#136061',
+  brightWhite: '#8c959f',
+};
+
 // Initialize terminal
 function initTerminal() {
   term = new Terminal({
     cursorBlink: true,
     cursorStyle: 'block',
-    fontSize: 14,
+    fontSize: currentFontSize,
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     theme: {
       background: '#0d1117',
@@ -487,13 +547,266 @@ document.addEventListener('keydown', (e) => {
     if (!contextMenu.classList.contains('hidden')) {
       hideContextMenu();
     }
+    const settingsPanel = document.getElementById('settings-panel');
+    if (settingsPanel && !settingsPanel.classList.contains('hidden')) {
+      hideSettings();
+    }
   }
 });
 
+// Touch toolbar elements
+const touchToolbar = document.getElementById('touch-toolbar');
+const fontDecrease = document.getElementById('font-decrease');
+const fontIncrease = document.getElementById('font-increase');
+const settingsPanel = document.getElementById('settings-panel');
+const settingsClose = document.getElementById('settings-close');
+const fontSizeSlider = document.getElementById('font-size-slider');
+const fontSizeDisplay = document.getElementById('font-size-display');
+const quickCommandsContainer = document.getElementById('quick-commands');
+const newCmdInput = document.getElementById('new-cmd-input');
+const addCmdBtn = document.getElementById('add-cmd-btn');
+
+// Header buttons
+const toolbarToggle = document.getElementById('toolbar-toggle');
+const themeToggleHeader = document.getElementById('theme-toggle-header');
+const settingsBtnHeader = document.getElementById('settings-btn-header');
+
+// Toolbar toggle state
+let toolbarVisible = localStorage.getItem('toolbarVisible') === 'true';
+
+// Apply saved theme on load
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute('data-theme', theme);
+  if (term) {
+    term.options.theme = theme === 'dark' ? darkTheme : lightTheme;
+  }
+  localStorage.setItem('theme', theme);
+}
+
+// Font size functions
+function setFontSize(size) {
+  size = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, size));
+  currentFontSize = size;
+  if (term) {
+    term.options.fontSize = size;
+    if (fitAddon) {
+      fitAddon.fit();
+    }
+  }
+  if (fontSizeSlider) fontSizeSlider.value = size;
+  if (fontSizeDisplay) fontSizeDisplay.textContent = size + 'px';
+  localStorage.setItem('fontSize', size);
+}
+
+// Settings panel
+function showSettings() {
+  if (settingsPanel) {
+    settingsPanel.classList.remove('hidden');
+    renderQuickCommands();
+  }
+}
+
+function hideSettings() {
+  if (settingsPanel) {
+    settingsPanel.classList.add('hidden');
+  }
+  if (term) term.focus();
+}
+
+// Quick commands - using safe DOM methods
+function renderQuickCommands() {
+  if (!quickCommandsContainer) return;
+
+  // Clear existing buttons safely
+  while (quickCommandsContainer.firstChild) {
+    quickCommandsContainer.removeChild(quickCommandsContainer.firstChild);
+  }
+
+  quickCommands.forEach((cmd, index) => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-cmd';
+    btn.textContent = cmd;
+    btn.onclick = () => {
+      if (ws && ws.readyState === WebSocket.OPEN && currentSession) {
+        ws.send(JSON.stringify({ type: 'input', data: cmd + '\n' }));
+      }
+      hideSettings();
+    };
+    btn.oncontextmenu = (e) => {
+      e.preventDefault();
+      quickCommands.splice(index, 1);
+      localStorage.setItem('quickCommands', JSON.stringify(quickCommands));
+      renderQuickCommands();
+    };
+    quickCommandsContainer.appendChild(btn);
+  });
+}
+
+function addQuickCommand(cmd) {
+  if (cmd && !quickCommands.includes(cmd)) {
+    quickCommands.push(cmd);
+    localStorage.setItem('quickCommands', JSON.stringify(quickCommands));
+    renderQuickCommands();
+  }
+}
+
+// Touch toolbar event handlers
+if (touchToolbar) {
+  touchToolbar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.toolbar-btn');
+    if (!btn) return;
+
+    // Handle modifier keys
+    if (btn.dataset.modifier) {
+      const mod = btn.dataset.modifier;
+      activeModifiers[mod] = !activeModifiers[mod];
+      btn.classList.toggle('active', activeModifiers[mod]);
+      return;
+    }
+
+    // Handle key sequences (^C, ^D, ^Z)
+    if (btn.dataset.sequence) {
+      const seq = btn.dataset.sequence;
+      let data = '';
+      if (seq === 'ctrl+c') data = '\x03';
+      else if (seq === 'ctrl+d') data = '\x04';
+      else if (seq === 'ctrl+z') data = '\x1a';
+
+      if (data && ws && ws.readyState === WebSocket.OPEN && currentSession) {
+        ws.send(JSON.stringify({ type: 'input', data }));
+      }
+      return;
+    }
+
+    // Handle regular keys
+    if (btn.dataset.key) {
+      let data = '';
+      const key = btn.dataset.key;
+
+      switch (key) {
+        case 'Escape': data = '\x1b'; break;
+        case 'Tab': data = '\t'; break;
+        case 'ArrowUp': data = '\x1b[A'; break;
+        case 'ArrowDown': data = '\x1b[B'; break;
+        case 'ArrowRight': data = '\x1b[C'; break;
+        case 'ArrowLeft': data = '\x1b[D'; break;
+      }
+
+      // Apply modifiers
+      if (activeModifiers.ctrl && data.length === 1) {
+        const code = data.toUpperCase().charCodeAt(0);
+        if (code >= 65 && code <= 90) {
+          data = String.fromCharCode(code - 64);
+        }
+      }
+
+      if (data && ws && ws.readyState === WebSocket.OPEN && currentSession) {
+        ws.send(JSON.stringify({ type: 'input', data }));
+      }
+
+      // Clear modifiers after use
+      activeModifiers.ctrl = false;
+      activeModifiers.alt = false;
+      touchToolbar.querySelectorAll('.modifier').forEach(m => m.classList.remove('active'));
+    }
+  });
+}
+
+// Font controls
+if (fontDecrease) {
+  fontDecrease.onclick = () => setFontSize(currentFontSize - 1);
+}
+if (fontIncrease) {
+  fontIncrease.onclick = () => setFontSize(currentFontSize + 1);
+}
+
+// Toolbar toggle function
+function toggleToolbar() {
+  toolbarVisible = !toolbarVisible;
+  if (touchToolbar) {
+    touchToolbar.classList.toggle('hidden', !toolbarVisible);
+  }
+  if (toolbarToggle) {
+    toolbarToggle.classList.toggle('active', toolbarVisible);
+  }
+  localStorage.setItem('toolbarVisible', toolbarVisible);
+  // Refit terminal after toolbar toggle
+  if (fitAddon) {
+    setTimeout(() => fitAddon.fit(), 100);
+  }
+}
+
+// Apply toolbar state on load
+function applyToolbarState() {
+  if (touchToolbar) {
+    touchToolbar.classList.toggle('hidden', !toolbarVisible);
+  }
+  if (toolbarToggle) {
+    toolbarToggle.classList.toggle('active', toolbarVisible);
+  }
+}
+
+// Toolbar toggle button
+if (toolbarToggle) {
+  toolbarToggle.onclick = toggleToolbar;
+}
+
+// Theme toggle (header button)
+if (themeToggleHeader) {
+  themeToggleHeader.onclick = () => {
+    applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+  };
+}
+
+// Settings button (header button)
+if (settingsBtnHeader) {
+  settingsBtnHeader.onclick = showSettings;
+}
+if (settingsClose) {
+  settingsClose.onclick = hideSettings;
+}
+
+// Font size slider
+if (fontSizeSlider) {
+  fontSizeSlider.value = currentFontSize;
+  fontSizeSlider.oninput = () => setFontSize(parseInt(fontSizeSlider.value));
+}
+if (fontSizeDisplay) {
+  fontSizeDisplay.textContent = currentFontSize + 'px';
+}
+
+// Add command button
+if (addCmdBtn && newCmdInput) {
+  addCmdBtn.onclick = () => {
+    const cmd = newCmdInput.value.trim();
+    if (cmd) {
+      addQuickCommand(cmd);
+      newCmdInput.value = '';
+    }
+  };
+  newCmdInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      addCmdBtn.click();
+    }
+  };
+}
+
 // Initialize
 function init() {
+  // Apply saved theme before terminal init
+  if (currentTheme) {
+    document.documentElement.setAttribute('data-theme', currentTheme);
+  }
+
   initTerminal();
   connect();
+
+  // Apply theme to terminal after init
+  applyTheme(currentTheme);
+
+  // Apply toolbar visibility state
+  applyToolbarState();
 
   // Restore current session from localStorage
   const savedSession = localStorage.getItem('currentSession');

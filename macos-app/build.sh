@@ -16,8 +16,10 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy Info.plist
 cp "$APP_NAME/Info.plist" "$APP_BUNDLE/Contents/"
 
-# Copy icon
+# Copy icons
 cp "$APP_NAME/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
+cp "$APP_NAME/MenuIcon.png" "$APP_BUNDLE/Contents/Resources/"
+cp "$APP_NAME/MenuIcon@2x.png" "$APP_BUNDLE/Contents/Resources/"
 
 # Compile Swift
 swiftc -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \

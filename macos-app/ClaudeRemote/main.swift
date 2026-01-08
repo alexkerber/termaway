@@ -1,38 +1,108 @@
 import Cocoa
-import Network
+import SwiftUI
 
+// MARK: - Display Mode
+enum DisplayMode: String, CaseIterable {
+    case menuBarOnly = "Menu Bar Only"
+    case dockOnly = "Dock Only"
+    case both = "Both"
+}
+
+// MARK: - App Delegate
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var statusItem: NSStatusItem!
+    var statusItem: NSStatusItem?
     var serverProcess: Process?
     var isRunning = false
     var localIP: String = "localhost"
     let port = "3000"
+    var preferencesWindow: NSWindow?
+
+    var displayMode: DisplayMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "displayMode") ?? DisplayMode.menuBarOnly.rawValue
+            return DisplayMode(rawValue: raw) ?? .menuBarOnly
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "displayMode")
+            applyDisplayMode()
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Hide dock icon
-        NSApp.setActivationPolicy(.accessory)
-
-        // Get local IP
         localIP = getLocalIP() ?? "localhost"
-
-        // Create status bar item
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Claude Remote")
-        }
-
-        updateMenu()
-
-        // Auto-start server
+        applyDisplayMode()
         startServer()
     }
 
+    func applyDisplayMode() {
+        switch displayMode {
+        case .menuBarOnly:
+            NSApp.setActivationPolicy(.accessory)
+            setupStatusItem()
+        case .dockOnly:
+            NSApp.setActivationPolicy(.regular)
+            removeStatusItem()
+        case .both:
+            NSApp.setActivationPolicy(.regular)
+            setupStatusItem()
+        }
+    }
+
+    func setupStatusItem() {
+        if statusItem == nil {
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        }
+        updateStatusIcon()
+        updateMenu()
+    }
+
+    func updateStatusIcon() {
+        guard let button = statusItem?.button else { return }
+
+        // Load custom icon
+        if let iconPath = Bundle.main.path(forResource: "MenuIcon", ofType: "png"),
+           let icon = NSImage(contentsOfFile: iconPath) {
+            icon.size = NSSize(width: 18, height: 18)
+            icon.isTemplate = true  // Adapts to light/dark mode
+            button.image = icon
+        } else {
+            // Fallback to SF Symbol
+            button.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Claude Code Remote")
+        }
+    }
+
+    func removeStatusItem() {
+        if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
     func updateMenu() {
+        guard let statusItem = statusItem else { return }
+
         let menu = NSMenu()
 
-        // Status
-        let statusMenuItem = NSMenuItem(title: isRunning ? "● Server Running" : "○ Server Stopped", action: nil, keyEquivalent: "")
+        // Status with colored dot
+        let statusText = isRunning ? "Server Running" : "Server Stopped"
+        let statusMenuItem = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
+
+        // Add colored circle to status text
+        let statusString = NSMutableAttributedString()
+        let dotAttachment = NSTextAttachment()
+        let dotSize: CGFloat = 8
+        let dotImage = NSImage(size: NSSize(width: dotSize, height: dotSize))
+        dotImage.lockFocus()
+        let dotColor: NSColor = isRunning ? .systemGreen : .systemRed
+        dotColor.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 0, y: 0, width: dotSize, height: dotSize)).fill()
+        dotImage.unlockFocus()
+        dotAttachment.image = dotImage
+
+        let dotString = NSAttributedString(attachment: dotAttachment)
+        statusString.append(dotString)
+        statusString.append(NSAttributedString(string: " " + statusText))
+        statusMenuItem.attributedTitle = statusString
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
 
@@ -44,7 +114,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let ipItem = NSMenuItem(title: urlString, action: #selector(copyURL), keyEquivalent: "c")
             ipItem.toolTip = "Click to copy"
             menu.addItem(ipItem)
-
             menu.addItem(NSMenuItem.separator())
         }
 
@@ -63,6 +132,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(NSMenuItem.separator())
+
+        // Preferences
+        menu.addItem(NSMenuItem(title: "Preferences", action: #selector(showPreferences), keyEquivalent: ","))
+
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
 
         statusItem.menu = menu
@@ -71,7 +145,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func startServer() {
         guard !isRunning else { return }
 
-        // Try to find node
         let nodePaths = [
             "/opt/homebrew/opt/node@22/bin/node",
             "/opt/homebrew/bin/node",
@@ -87,59 +160,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let node = nodePath else {
-            print("Node.js not found")
+            showAlert(message: "Node.js not found. Please install Node.js 22 LTS.")
             return
         }
 
-        // Find server script - check relative to app bundle first, then current dir
-        let bundlePath = Bundle.main.bundlePath
-        var scriptPath = (bundlePath as NSString).deletingLastPathComponent
-        scriptPath = (scriptPath as NSString).deletingLastPathComponent
-        scriptPath = (scriptPath as NSString).deletingLastPathComponent
-        scriptPath = (scriptPath as NSString).appendingPathComponent("server/index.js")
-
-        if !FileManager.default.fileExists(atPath: scriptPath) {
-            // Try parent of macos-app folder
-            scriptPath = (bundlePath as NSString).deletingLastPathComponent
-            scriptPath = (scriptPath as NSString).deletingLastPathComponent
-            scriptPath = (scriptPath as NSString).appendingPathComponent("server/index.js")
-        }
-
-        if !FileManager.default.fileExists(atPath: scriptPath) {
-            // Try current working directory
-            scriptPath = FileManager.default.currentDirectoryPath + "/server/index.js"
-        }
-
-        guard FileManager.default.fileExists(atPath: scriptPath) else {
-            print("Server script not found: \(scriptPath)")
+        let scriptPath = findServerScript()
+        guard let script = scriptPath, FileManager.default.fileExists(atPath: script) else {
+            showAlert(message: "Server script not found.")
             return
         }
 
         serverProcess = Process()
         serverProcess?.executableURL = URL(fileURLWithPath: node)
-        serverProcess?.arguments = [scriptPath]
+        serverProcess?.arguments = [script]
         serverProcess?.environment = ProcessInfo.processInfo.environment
-
-        // Redirect output
         serverProcess?.standardOutput = FileHandle.nullDevice
         serverProcess?.standardError = FileHandle.nullDevice
 
         do {
             try serverProcess?.run()
             isRunning = true
-            updateMenu()
             updateStatusIcon()
+            updateMenu()
         } catch {
-            print("Failed to start server: \(error)")
+            showAlert(message: "Failed to start server: \(error.localizedDescription)")
         }
+    }
+
+    func findServerScript() -> String? {
+        let bundlePath = Bundle.main.bundlePath
+
+        // When installed in /Applications, look for server relative to app
+        let paths = [
+            // Dev: macos-app/ClaudeRemote.app -> ../server/index.js
+            (bundlePath as NSString).deletingLastPathComponent + "/server/index.js",
+            // Installed: /Applications/ClaudeRemote.app -> ~/Developer/claude-remote/server/index.js
+            NSHomeDirectory() + "/Developer/claude-remote/server/index.js",
+            // Current directory
+            FileManager.default.currentDirectoryPath + "/server/index.js"
+        ]
+
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+        return nil
     }
 
     @objc func stopServer() {
         serverProcess?.terminate()
         serverProcess = nil
         isRunning = false
-        updateMenu()
         updateStatusIcon()
+        updateMenu()
     }
 
     @objc func openBrowser() {
@@ -153,16 +227,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSPasteboard.general.setString(urlString, forType: .string)
     }
 
+    @objc func showPreferences() {
+        if preferencesWindow == nil {
+            let prefsView = PreferencesView(appDelegate: self)
+            preferencesWindow = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            preferencesWindow?.title = "Preferences"
+            preferencesWindow?.contentView = NSHostingView(rootView: prefsView)
+            preferencesWindow?.center()
+        }
+        preferencesWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc func quit() {
         stopServer()
         NSApp.terminate(nil)
     }
 
-    func updateStatusIcon() {
-        if let button = statusItem.button {
-            let symbolName = isRunning ? "terminal.fill" : "terminal"
-            button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Claude Remote")
-        }
+    func showAlert(message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Claude Code Remote"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     func getLocalIP() -> String? {
@@ -192,9 +284,74 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         stopServer()
     }
+
+    // Handle dock icon click when in dock mode
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if displayMode == .dockOnly {
+            showPreferences()
+        }
+        return true
+    }
 }
 
-// Entry point
+// MARK: - Preferences View
+struct PreferencesView: View {
+    @ObservedObject var viewModel: PreferencesViewModel
+
+    init(appDelegate: AppDelegate) {
+        self.viewModel = PreferencesViewModel(appDelegate: appDelegate)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Display Mode")
+                .font(.headline)
+
+            Picker("", selection: $viewModel.displayMode) {
+                ForEach(DisplayMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            .onChange(of: viewModel.displayMode) { newValue in
+                viewModel.appDelegate.displayMode = newValue
+            }
+
+            Spacer()
+
+            Divider()
+
+            // Copyright
+            VStack(spacing: 4) {
+                Text("Created by Alex Kerber")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Link("alexkerber.com", destination: URL(string: "https://alexkerber.com")!)
+                    .font(.caption)
+
+                Text("© 2026 All rights reserved")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(20)
+        .frame(width: 280, height: 200)
+    }
+}
+
+class PreferencesViewModel: ObservableObject {
+    let appDelegate: AppDelegate
+    @Published var displayMode: DisplayMode
+
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+        self.displayMode = appDelegate.displayMode
+    }
+}
+
+// MARK: - Entry Point
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

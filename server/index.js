@@ -2,7 +2,9 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
+import { Bonjour } from 'bonjour-service';
 import SessionManager from './sessionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +13,7 @@ const __dirname = path.dirname(__filename);
 // Configuration
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+const SERVICE_NAME = process.env.SERVICE_NAME || `Claude Terminal (${os.hostname()})`;
 
 // Initialize Express app
 const app = express();
@@ -308,10 +311,43 @@ function broadcastSessionList() {
   }
 }
 
+// Initialize Bonjour/mDNS
+const bonjour = new Bonjour();
+let bonjourService = null;
+
+// Get local IP address
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
 // Start server
 server.listen(PORT, HOST, () => {
+  const localIP = getLocalIP();
   console.log(`Web Terminal Server running at http://${HOST}:${PORT}`);
-  console.log(`Access from LAN: http://<your-ip>:${PORT}`);
+  console.log(`Access from LAN: http://${localIP}:${PORT}`);
+  console.log('');
+
+  // Publish mDNS service for discovery
+  bonjourService = bonjour.publish({
+    name: SERVICE_NAME,
+    type: 'http',
+    port: parseInt(PORT, 10),
+    txt: {
+      path: '/',
+      protocol: 'ws',
+    }
+  });
+
+  console.log(`Bonjour: Published as "${SERVICE_NAME}" (_http._tcp)`);
+  console.log('         Discoverable on local network');
   console.log('');
   console.log('Press Ctrl+C to stop the server');
 });
@@ -319,6 +355,12 @@ server.listen(PORT, HOST, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
+
+  // Unpublish Bonjour service
+  if (bonjourService) {
+    bonjourService.stop();
+  }
+  bonjour.destroy();
 
   // Kill all sessions
   for (const name of sessionManager.list()) {
