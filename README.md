@@ -18,7 +18,7 @@ A self-hosted web-based terminal that provides access to your machine's terminal
 
 ```bash
 bun install
-bun start
+node server/index.js
 ```
 
 Then open http://localhost:3000 in your browser.

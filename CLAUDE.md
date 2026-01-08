@@ -5,10 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-bun install     # Install dependencies
-bun start       # Start the server (http://localhost:3000)
-bun run dev     # Start with auto-reload on file changes
+bun install            # Install dependencies (fast)
+node server/index.js   # Start the server (http://localhost:3000)
+node --watch server/index.js  # Start with auto-reload
 ```
+
+Note: node-pty requires Node.js runtime (not bun) due to native bindings.
 
 ## Architecture
 
