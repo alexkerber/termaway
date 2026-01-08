@@ -17,9 +17,8 @@ A self-hosted web-based terminal that provides access to your machine's terminal
 ## Quick Start
 
 ```bash
-cd web-terminal
-npm install
-npm start
+bun install
+bun start
 ```
 
 Then open http://localhost:3000 in your browser.
@@ -66,7 +65,6 @@ Copy/Paste:
 ## Architecture
 
 ```
-web-terminal/
 ├── server/
 │   ├── index.js              # Express + WebSocket server
 │   └── sessionManager.js     # PTY session lifecycle
