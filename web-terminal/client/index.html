@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Web Terminal</title>
+  <link rel="stylesheet" href="/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Load xterm and addons -->
+  <script src="/xterm/lib/xterm.js"></script>
+  <script src="/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+  <script src="/xterm-addon-webgl/lib/xterm-addon-webgl.js"></script>
+  <script src="/xterm-addon-web-links/lib/xterm-addon-web-links.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Header with tabs and controls -->
+    <header id="header">
+      <div id="tabs-container">
+        <div id="tabs"></div>
+        <button id="new-session-btn" title="Create new session">+</button>
+      </div>
+      <div id="status-container">
+        <span id="connection-status" class="disconnected">
+          <span class="status-dot"></span>
+          <span class="status-text">Disconnected</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Terminal container -->
+    <main id="terminal-container">
+      <div id="terminal"></div>
+      <div id="no-session" class="hidden">
+        <div class="no-session-content">
+          <h2>No Active Session</h2>
+          <p>Create a new session to get started</p>
+          <button id="create-first-session" class="btn-primary">Create Session</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Context menu for tabs -->
+    <div id="context-menu" class="hidden">
+      <div class="context-menu-item" data-action="rename">Rename Session</div>
+      <div class="context-menu-item" data-action="kill">Kill Session</div>
+    </div>
+
+    <!-- Modal for new session name -->
+    <div id="modal-overlay" class="hidden">
+      <div id="modal">
+        <h3 id="modal-title">New Session</h3>
+        <input type="text" id="modal-input" placeholder="Session name" autocomplete="off">
+        <div id="modal-buttons">
+          <button id="modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="modal-confirm" class="btn-primary">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="terminal.js"></script>
+</body>
+</html>
