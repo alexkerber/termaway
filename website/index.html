@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TermAway - Your Mac Terminal, On Your iPad</title>
+    <meta name="description" content="Access your Mac's terminal from your iPad or any device. Perfect for coding from bed while your Mac stays connected to your displays.">
+    <link rel="icon" type="image/svg+xml" href="icon.svg" media="(prefers-color-scheme: dark)">
+    <link rel="icon" type="image/svg+xml" href="icon-light.svg" media="(prefers-color-scheme: light)">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-card: rgba(255, 255, 255, 0.03);
+            --bg-glass: rgba(255, 255, 255, 0.05);
+            --border-glass: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.6);
+            --accent-blue: #58a6ff;
+            --accent-green: #3fb950;
+            --accent-purple: #a855f7;
+            --accent-cyan: #22d3ee;
+            --glow-blue: rgba(88, 166, 255, 0.4);
+            --glow-purple: rgba(168, 85, 247, 0.3);
+            --nav-bg: rgba(10, 10, 15, 0.8);
+            --terminal-bg: #0d1117;
+            --grid-color: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Light mode via data attribute */
+        [data-theme="light"] {
+            --bg-dark: #f5f5f7;
+            --bg-card: rgba(0, 0, 0, 0.03);
+            --bg-glass: rgba(0, 0, 0, 0.05);
+            --border-glass: rgba(0, 0, 0, 0.1);
+            --text-primary: #1d1d1f;
+            --text-secondary: rgba(0, 0, 0, 0.6);
+            --accent-blue: #0066cc;
+            --accent-green: #28a745;
+            --accent-purple: #7c3aed;
+            --accent-cyan: #0891b2;
+            --glow-blue: rgba(0, 102, 204, 0.2);
+            --glow-purple: rgba(124, 58, 237, 0.15);
+            --nav-bg: rgba(245, 245, 247, 0.8);
+            --terminal-bg: #1a1a2e;
+            --grid-color: rgba(0, 0, 0, 0.03);
+        }
+
+        /* System preference light mode (when no manual choice) */
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) {
+                --bg-dark: #f5f5f7;
+                --bg-card: rgba(0, 0, 0, 0.03);
+                --bg-glass: rgba(0, 0, 0, 0.05);
+                --border-glass: rgba(0, 0, 0, 0.1);
+                --text-primary: #1d1d1f;
+                --text-secondary: rgba(0, 0, 0, 0.6);
+                --accent-blue: #0066cc;
+                --accent-green: #28a745;
+                --accent-purple: #7c3aed;
+                --accent-cyan: #0891b2;
+                --glow-blue: rgba(0, 102, 204, 0.2);
+                --glow-purple: rgba(124, 58, 237, 0.15);
+                    --nav-bg: rgba(245, 245, 247, 0.8);
+                --terminal-bg: #1a1a2e;
+                --grid-color: rgba(0, 0, 0, 0.03);
+            }
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated gradient background */
+        .bg-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(88, 166, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(34, 211, 238, 0.05) 0%, transparent 70%);
+            animation: gradientMove 20s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        @keyframes gradientMove {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.1) rotate(3deg); }
+        }
+
+        /* Grid pattern overlay */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: -1;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 20px 0;
+            background: var(--nav-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 1.25rem;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .logo img.logo-svg {
+            height: 36px;
+            width: auto;
+        }
+
+        .logo .logo-dark { display: block; }
+        .logo .logo-light { display: none; }
+
+        [data-theme="light"] .logo .logo-dark { display: none; }
+        [data-theme="light"] .logo .logo-light { display: block; }
+
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .theme-toggle {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text-primary);
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-card);
+            border-color: var(--accent-blue);
+        }
+
+        .theme-toggle .icon-sun,
+        .theme-toggle .icon-moon {
+            transition: opacity 0.3s, transform 0.3s;
+            position: absolute;
+        }
+
+        /* Dark mode (default): show sun (to switch to light), hide moon */
+        .theme-toggle .icon-sun { opacity: 1; }
+        .theme-toggle .icon-moon { opacity: 0; }
+
+        /* Light mode: show moon (to switch to dark), hide sun */
+        [data-theme="light"] .theme-toggle .icon-sun { opacity: 0; }
+        [data-theme="light"] .theme-toggle .icon-moon { opacity: 1; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 16px 24px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+            box-shadow: 0 4px 20px var(--glow-blue);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px var(--glow-blue);
+        }
+
+        .btn-glass {
+            background: var(--bg-glass);
+            color: var(--text-primary);
+            border: 1px solid var(--border-glass);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-glass:hover {
+            background: var(--bg-card);
+            border-color: var(--border-glass);
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            padding: 120px 0 80px;
+        }
+
+        .hero-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            align-items: center;
+        }
+
+        .hero-text {
+            max-width: 560px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            margin-bottom: 24px;
+            backdrop-filter: blur(10px);
+        }
+
+        .badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        h1 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+        }
+
+        h1 .gradient {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-description {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            line-height: 1.7;
+        }
+
+        .hero-description strong {
+            color: var(--text-primary);
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .hero-visual {
+            position: relative;
+        }
+
+        .device-mockup {
+            position: relative;
+            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 20px;
+            backdrop-filter: blur(20px);
+            box-shadow:
+                0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                0 0 100px var(--glow-purple);
+        }
+
+        .terminal-window {
+            background: var(--terminal-bg);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .terminal-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: #ff5f56; }
+        .terminal-dot.yellow { background: #ffbd2e; }
+        .terminal-dot.green { background: #27ca40; }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .terminal-body {
+            padding: 20px;
+            font-family: 'Geist Mono', 'SF Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            min-height: 300px;
+        }
+
+        .terminal-line {
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-prompt {
+            color: var(--accent-green);
+        }
+
+        .terminal-command {
+            color: var(--text-primary);
+        }
+
+        .terminal-output {
+            color: var(--text-secondary);
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 20px;
+            background: var(--accent-blue);
+            animation: blink 1s infinite;
+            vertical-align: middle;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Features Section */
+        .features {
+            padding: 120px 0;
+        }
+
+        .section-header {
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto 60px;
+        }
+
+        .section-header h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+
+        .feature-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            padding: 32px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--border-glass);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+
+        .feature-icon.blue { background: rgba(88, 166, 255, 0.15); }
+        .feature-icon.purple { background: rgba(168, 85, 247, 0.15); }
+        .feature-icon.green { background: rgba(63, 185, 80, 0.15); }
+        .feature-icon.cyan { background: rgba(34, 211, 238, 0.15); }
+        .feature-icon.orange { background: rgba(251, 146, 60, 0.15); }
+        .feature-icon.pink { background: rgba(236, 72, 153, 0.15); }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* Use Cases Section */
+        .use-cases {
+            padding: 120px 0;
+        }
+
+        .use-case-card {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            align-items: center;
+            padding: 60px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 32px;
+            backdrop-filter: blur(20px);
+        }
+
+        .use-case-content h2 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+
+        .use-case-content p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 24px;
+        }
+
+        .use-case-list {
+            list-style: none;
+        }
+
+        .use-case-list li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            color: var(--text-secondary);
+        }
+
+        .use-case-list li::before {
+            content: '✓';
+            color: var(--accent-green);
+            font-weight: 700;
+        }
+
+        .emoji-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .emoji-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            padding: 32px;
+            text-align: center;
+            transition: transform 0.3s;
+        }
+
+        .emoji-card:hover {
+            transform: scale(1.05);
+        }
+
+        .emoji-card .emoji {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .emoji-card span:last-child {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Download Section */
+        .download {
+            padding: 120px 0;
+        }
+
+        .download-content {
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .download h2 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .download-content > .section-subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 48px;
+        }
+
+        .download-cards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 48px;
+            align-items: stretch;
+        }
+
+        .download-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 40px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .download-card:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 40px var(--glow-blue);
+        }
+
+        .download-card.coming-soon {
+            opacity: 0.7;
+        }
+
+        .download-card .icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .download-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+
+        .download-card p {
+            color: var(--text-secondary);
+            margin-bottom: 0;
+            flex: 1;
+        }
+
+        .download-card .btn,
+        .download-card .coming-soon-badge {
+            width: 100%;
+            justify-content: center;
+            margin-top: 24px;
+        }
+
+        .version-inline {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--accent-green);
+            margin-left: 8px;
+        }
+
+        .coming-soon-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 16px 24px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            opacity: 0.4;
+        }
+
+        /* Footer */
+        footer {
+            padding: 60px 0;
+            border-top: 1px solid var(--border-glass);
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .footer-right {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .footer-right a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        .footer-meta {
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .hero-content {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+
+            .hero-text {
+                max-width: 100%;
+            }
+
+            .hero-buttons {
+                justify-content: center;
+            }
+
+            .hero-visual {
+                max-width: 500px;
+                margin: 0 auto;
+            }
+
+            .features-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .use-case-card {
+                grid-template-columns: 1fr;
+            }
+
+            .download-cards {
+                grid-template-columns: 1fr;
+                max-width: 400px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .nav-links {
+                display: none;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .use-case-card {
+                padding: 32px;
+            }
+
+            .emoji-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                gap: 24px;
+                text-align: center;
+            }
+
+            .footer-left {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+
+    <nav>
+        <div class="container">
+            <a href="#" class="logo">
+                <img src="logo.svg" alt="TermAway" class="logo-svg logo-dark">
+                <img src="logo-light.svg" alt="TermAway" class="logo-svg logo-light">
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#use-cases">Why?</a>
+                <a href="#download">Download</a>
+                <a href="https://github.com/alexkerber/claude-remote" target="_blank">GitHub</a>
+                <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+                    <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <div class="badge">Open Source & Free</div>
+                    <h1>Your Mac terminal,<br><span class="gradient">on your iPad</span></h1>
+                    <p class="hero-description">
+                        Access your terminal from anywhere on your local network.
+                        <strong>LAN-only by design</strong> — your terminal never leaves your network.
+                        No cloud. No accounts. No tracking.
+                    </p>
+                    <div class="hero-buttons">
+                        <a href="#download" class="btn btn-primary">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download for Mac
+                        </a>
+                        <a href="https://github.com/alexkerber/claude-remote" class="btn btn-glass" target="_blank">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                            </svg>
+                            View on GitHub
+                        </a>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="device-mockup">
+                        <div class="terminal-window">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">termaway — zsh</span>
+                            </div>
+                            <div class="terminal-body">
+                                <div class="terminal-line">
+                                    <span class="terminal-prompt">~</span>
+                                    <span class="terminal-command">claude</span>
+                                </div>
+                                <div class="terminal-output" style="margin: 12px 0;">
+                                    <span style="color: var(--accent-purple);">╭─────────────────────────────────╮</span><br>
+                                    <span style="color: var(--accent-purple);">│</span> <span style="color: var(--accent-cyan);">Claude Code</span> <span style="color: var(--text-secondary);">v2.1.1</span> <span style="color: var(--accent-purple);">          │</span><br>
+                                    <span style="color: var(--accent-purple);">╰─────────────────────────────────╯</span>
+                                </div>
+                                <div class="terminal-line" style="margin-top: 16px;">
+                                    <span class="terminal-prompt">~/projects</span>
+                                    <span class="terminal-command">npm run dev</span>
+                                </div>
+                                <div class="terminal-output" style="margin: 8px 0; color: var(--accent-green);">
+                                    ✓ Server running at localhost:3000
+                                </div>
+                                <div class="terminal-line" style="margin-top: 12px;">
+                                    <span class="terminal-prompt">~/projects</span>
+                                    <span class="cursor"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2>Not just AI chat. Full terminal.</h2>
+                <p>Run anything — Claude Code, git, docker, npm, vim, ssh. Your entire dev environment, in your hands.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon blue">🖥️</div>
+                    <h3>Multi-Project Workflow</h3>
+                    <p>Frontend in one tab, backend in another, infra in a third. Manage complex projects with multiple sessions.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon purple">🔒</div>
+                    <h3>LAN-Only Security</h3>
+                    <p>Your terminal never leaves your network. No cloud servers, no accounts, no data collection.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon green">⚡</div>
+                    <h3>Real Terminal Access</h3>
+                    <p>Not a wrapper. Full PTY with proper shell, environment variables, and tool support.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon cyan">📱</div>
+                    <h3>Touch Optimized</h3>
+                    <p>Special toolbar with Ctrl, Alt, Esc, Tab, and arrow keys. Built for iPad.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon orange">🔍</div>
+                    <h3>Zero Config</h3>
+                    <p>Bonjour auto-discovery finds your Mac instantly. Install, connect, code.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon pink">🎨</div>
+                    <h3>Native Performance</h3>
+                    <p>SwiftTerm-powered with GPU rendering. Smooth scrolling, proper colors, feels native.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="use-cases" id="use-cases">
+        <div class="container">
+            <div class="use-case-card">
+                <div class="use-case-content">
+                    <h2>For devs who actually ship</h2>
+                    <p>
+                        You maintain real projects. Multiple repos, different branches, various environments.
+                        Your Mac is your workstation — TermAway lets you use it from anywhere.
+                    </p>
+                    <ul class="use-case-list">
+                        <li>Run Claude Code on your frontend while checking backend logs</li>
+                        <li>Spin up docker, run tests, deploy — all from your iPad</li>
+                        <li>Switch between feature branches without context switching</li>
+                        <li>Your full dev environment, not a dumbed-down mobile version</li>
+                    </ul>
+                </div>
+                <div class="emoji-grid">
+                    <div class="emoji-card">
+                        <span class="emoji">🛋️</span>
+                        <span>Couch coding</span>
+                    </div>
+                    <div class="emoji-card">
+                        <span class="emoji">🛏️</span>
+                        <span>Bed debugging</span>
+                    </div>
+                    <div class="emoji-card">
+                        <span class="emoji">☕</span>
+                        <span>Coffee table commits</span>
+                    </div>
+                    <div class="emoji-card">
+                        <span class="emoji">🌙</span>
+                        <span>Late night deploys</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="download" id="download">
+        <div class="container">
+            <div class="download-content">
+                <h2>Get TermAway</h2>
+                <p class="section-subtitle">Choose your platform and start coding remotely</p>
+                <div class="download-cards">
+                    <div class="download-card">
+                        <div class="icon">🖥️</div>
+                        <h3>macOS <span class="version-inline">v1.0</span></h3>
+                        <p>Menu bar app that runs the terminal server</p>
+                        <a href="https://github.com/alexkerber/claude-remote/releases" class="btn btn-primary">
+                            Download for Mac
+                        </a>
+                    </div>
+                    <div class="download-card coming-soon">
+                        <div class="icon">📱</div>
+                        <h3>iOS / iPadOS</h3>
+                        <p>Native app with SwiftTerm</p>
+                        <span class="coming-soon-badge">Coming Soon</span>
+                    </div>
+                </div>
+                <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 32px;">
+                    Free and open source. Run your own terminal server.
+                </p>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                    You can also use the web interface from any browser at <code style="background: var(--bg-glass); padding: 4px 8px; border-radius: 4px;">http://your-mac-ip:3000</code>
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-left">
+                    <a href="#" class="logo">
+                        <img src="logo.svg" alt="TermAway" class="logo-svg logo-dark">
+                        <img src="logo-light.svg" alt="TermAway" class="logo-svg logo-light">
+                    </a>
+                    <div class="footer-links">
+                        <a href="https://github.com/alexkerber/claude-remote" target="_blank">GitHub</a>
+                        <a href="https://github.com/alexkerber/claude-remote/issues" target="_blank">Issues</a>
+                        <a href="https://github.com/alexkerber/claude-remote#readme" target="_blank">Docs</a>
+                    </div>
+                </div>
+                <div class="footer-right">
+                    <span class="footer-meta">Open Source · MIT License · v1.0</span>
+                    <span>Made by <a href="https://alexkerber.com" target="_blank">Alex Kerber</a></span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Theme toggle functionality
+        const themeToggle = document.getElementById('themeToggle');
+        const root = document.documentElement;
+
+        // Check for saved theme preference or use system preference
+        function getPreferredTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved) return saved;
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+
+        // Apply theme
+        function setTheme(theme) {
+            root.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        }
+
+        // Initialize theme
+        setTheme(getPreferredTheme());
+
+        // Toggle theme on button click
+        themeToggle.addEventListener('click', () => {
+            const current = root.getAttribute('data-theme');
+            setTheme(current === 'light' ? 'dark' : 'light');
+        });
+
+        // Listen for system preference changes
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                setTheme(e.matches ? 'light' : 'dark');
+            }
+        });
+    </script>
+</body>
+</html>

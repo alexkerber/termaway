@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-APP_NAME="ClaudeRemote"
+APP_NAME="TermAway"
 APP_BUNDLE="$APP_NAME.app"
 
 # Clean previous build

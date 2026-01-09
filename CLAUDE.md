@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project: TermAway
+
+TermAway is a self-hosted terminal access solution. Your Mac terminal, on your iPad.
+
 ## Commands
 
 ```bash
@@ -26,9 +30,21 @@ This is a web-based terminal application that provides remote terminal access ov
   - A set of attached WebSocket clients
   - Sessions persist until explicitly killed or the shell exits
 
-### Client (Vanilla JS)
+### iOS App (SwiftUI + SwiftTerm)
 
-- **client/terminal.js**: xterm.js terminal with WebGL rendering, auto-reconnect with exponential backoff, and tab-based session UI. Communicates via JSON messages over WebSocket.
+- **ios-app/**: Native iOS/iPadOS client using SwiftTerm for terminal emulation
+- Connects via WebSocket to the server
+- Bonjour discovery for finding servers on LAN
+
+### macOS App (AppKit)
+
+- **macos-app/**: Menu bar app that runs the terminal server
+- Manages server lifecycle (start/stop)
+- Shows connection URL
+
+### Website
+
+- **website/**: Marketing site at termaway.app
 
 ### WebSocket Protocol
 

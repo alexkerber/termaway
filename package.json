@@ -1,7 +1,7 @@
 {
-  "name": "claude-remote",
+  "name": "termaway",
   "version": "1.0.0",
-  "description": "Self-hosted web-based terminal for LAN access",
+  "description": "TermAway - Your Mac terminal, on your iPad. Self-hosted LAN terminal access.",
   "type": "module",
   "main": "server/index.js",
   "scripts": {

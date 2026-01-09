@@ -1,13 +1,14 @@
-# Web Terminal
+# TermAway
 
-A self-hosted web-based terminal that provides access to your machine's terminal sessions from any browser on your LAN. Perfect for remote coding from bed, TV, or anywhere in your home.
+Your Mac terminal, on your iPad. A self-hosted web-based terminal that provides access to your machine's terminal sessions from any browser on your LAN. Perfect for remote coding from bed, couch, or anywhere in your home.
 
 ## Features
 
+- **LAN-Only by Design**: Your terminal never leaves your network. No cloud, no accounts, no tracking.
 - **Named Persistent Sessions**: Create sessions like "backend", "frontend", "flutter" and reconnect to them anytime
 - **Full Terminal Emulation**: 256 color and true color (24-bit) support via xterm.js
 - **Your Shell, Your Config**: Uses your default shell ($SHELL) with all your dotfiles (.zshrc, aliases, PATH, colors)
-- **Interactive CLI Support**: Works with vim, nano, htop, top, less, man pages, and claude
+- **Interactive CLI Support**: Works with vim, nano, htop, top, less, man pages, and Claude Code
 - **Session Persistence**: Sessions survive browser disconnect - reconnect picks up exactly where you left off
 - **Responsive Design**: Works on TV (fullscreen), tablet, and phone
 - **GPU Accelerated**: WebGL rendering for smooth performance
@@ -26,6 +27,12 @@ Then open http://localhost:3000 in your browser.
 For LAN access, use your machine's IP address or hostname:
 - http://192.168.x.x:3000
 - http://your-machine.local:3000
+
+## Apps
+
+- **macOS**: Menu bar app that runs the terminal server (`macos-app/`)
+- **iOS/iPadOS**: Native SwiftTerm client (`ios-app/`)
+- **Web**: Browser-based client at http://localhost:3000
 
 ## Configuration
 
@@ -68,10 +75,9 @@ Copy/Paste:
 ├── server/
 │   ├── index.js              # Express + WebSocket server
 │   └── sessionManager.js     # PTY session lifecycle
-├── client/
-│   ├── index.html            # Main page
-│   ├── terminal.js           # xterm.js + WebSocket client
-│   └── styles.css            # Dark theme
+├── ios-app/                  # Native iOS/iPadOS client
+├── macos-app/                # Menu bar server app
+├── website/                  # Marketing website
 ├── package.json
 └── README.md
 ```
@@ -96,8 +102,10 @@ Server → Client:
 
 ## Tech Stack
 
-- **Backend**: Node.js, Express, ws, node-pty
-- **Frontend**: Vanilla JS, xterm.js, xterm addons (fit, webgl, web-links)
+- **Server**: Node.js, Express, ws, node-pty
+- **Web Client**: Vanilla JS, xterm.js, xterm addons (fit, webgl, web-links)
+- **iOS Client**: Swift, SwiftTerm, SwiftUI
+- **macOS App**: Swift, AppKit
 
 ## Security Notes
 
