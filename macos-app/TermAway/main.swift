@@ -282,7 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if preferencesWindow == nil {
             let prefsView = PreferencesView(appDelegate: self)
             preferencesWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 300, height: 260),
+                contentRect: NSRect(x: 0, y: 0, width: 300, height: 300),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
@@ -388,6 +388,16 @@ struct PreferencesView: View {
                 Text("TermAway v\(appVersion)")
                     .font(.caption)
                     .fontWeight(.medium)
+
+                // Logo
+                if let logoPath = Bundle.main.path(forResource: "Logo", ofType: "png"),
+                   let logoImage = NSImage(contentsOfFile: logoPath) {
+                    Image(nsImage: logoImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 32)
+                        .padding(.vertical, 4)
+                }
 
                 Text("Created by Alex Kerber")
                     .font(.caption)
