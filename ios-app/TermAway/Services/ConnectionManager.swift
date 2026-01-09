@@ -8,9 +8,15 @@ class ConnectionManager: ObservableObject {
     @Published var sessions: [Session] = []
     @Published var currentSession: Session?
     @Published var lastError: String?
+    @Published var isReconnecting = false
+    @Published var reconnectAttempts = 0
 
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession?
+    private var reconnectTask: Task<Void, Never>?
+    private var shouldAutoReconnect = false
+    private let maxReconnectAttempts = 10
+    private var appLifecycleObserver: NSObjectProtocol?
 
     // Terminal data callback - set by TerminalView
     var onTerminalOutput: ((String) -> Void)?
@@ -23,6 +29,30 @@ class ConnectionManager: ObservableObject {
         // Load saved server URL or use default
         if UserDefaults.standard.string(forKey: "serverURL") == nil {
             UserDefaults.standard.set("ws://192.168.1.231:3000", forKey: "serverURL")
+        }
+
+        // Observe app lifecycle to resume reconnection
+        setupAppLifecycleObserver()
+    }
+
+    deinit {
+        if let observer = appLifecycleObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func setupAppLifecycleObserver() {
+        appLifecycleObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                // Resume reconnection if we were trying to reconnect
+                if self?.shouldAutoReconnect == true && self?.isConnected == false {
+                    self?.attemptReconnect()
+                }
+            }
         }
     }
 
@@ -38,7 +68,10 @@ class ConnectionManager: ObservableObject {
         }
 
         isConnecting = true
+        isReconnecting = false
         lastError = nil
+        shouldAutoReconnect = true
+        reconnectAttempts = 0
 
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
@@ -56,16 +89,25 @@ class ConnectionManager: ObservableObject {
             if webSocket?.state == .running {
                 isConnected = true
                 isConnecting = false
+                isReconnecting = false
+                reconnectAttempts = 0
                 // Request session list
                 sendMessage(["type": "list"])
             } else {
                 isConnecting = false
                 lastError = "Connection failed"
+                attemptReconnect()
             }
         }
     }
 
     func disconnect() {
+        shouldAutoReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        isReconnecting = false
+        reconnectAttempts = 0
+
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isConnected = false
@@ -95,10 +137,99 @@ class ConnectionManager: ObservableObject {
                 case .failure(let error):
                     print("WebSocket error: \(error)")
                     self?.isConnected = false
+                    self?.isConnecting = false
                     self?.lastError = error.localizedDescription
+
+                    // Attempt to reconnect if auto-reconnect is enabled
+                    if self?.shouldAutoReconnect == true {
+                        self?.attemptReconnect()
+                    }
                 }
             }
         }
+    }
+
+    private func attemptReconnect() {
+        guard shouldAutoReconnect else { return }
+        guard reconnectAttempts < maxReconnectAttempts else {
+            isReconnecting = false
+            lastError = "Connection failed after \(maxReconnectAttempts) attempts. Tap to retry."
+            return
+        }
+
+        // Cancel any existing reconnect task
+        reconnectTask?.cancel()
+
+        isReconnecting = true
+        reconnectAttempts += 1
+
+        // Calculate delay with exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
+        let baseDelay = min(pow(2.0, Double(reconnectAttempts - 1)), 30.0)
+        let delayNanoseconds = UInt64(baseDelay * 1_000_000_000)
+
+        reconnectTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+
+                // Only proceed if we should still reconnect
+                guard !Task.isCancelled, shouldAutoReconnect else { return }
+
+                // Try to reconnect
+                await performReconnect()
+            } catch {
+                // Task was cancelled or sleep failed
+            }
+        }
+    }
+
+    private func performReconnect() async {
+        guard let serverURL = serverURL, let url = URL(string: serverURL) else {
+            lastError = "Invalid server URL"
+            isReconnecting = false
+            return
+        }
+
+        isConnecting = true
+
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        urlSession = URLSession(configuration: config)
+
+        webSocket = urlSession?.webSocketTask(with: url)
+        webSocket?.resume()
+
+        // Start receiving messages
+        receiveMessage()
+
+        // Check connection after a delay
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        if webSocket?.state == .running {
+            isConnected = true
+            isConnecting = false
+            isReconnecting = false
+            reconnectAttempts = 0
+            lastError = nil
+            // Request session list
+            sendMessage(["type": "list"])
+
+            // Re-attach to current session if we had one
+            if let sessionName = currentSession?.name {
+                sendMessage(["type": "attach", "name": sessionName])
+            }
+        } else {
+            isConnecting = false
+            // Try again
+            attemptReconnect()
+        }
+    }
+
+    func manualReconnect() {
+        reconnectAttempts = 0
+        shouldAutoReconnect = true
+        isReconnecting = false
+        lastError = nil
+        connect()
     }
 
     private func handleMessage(_ text: String) {
