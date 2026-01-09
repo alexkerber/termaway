@@ -1,6 +1,9 @@
 import Cocoa
 import SwiftUI
 
+// MARK: - Version
+let appVersion = "1.0.0"
+
 // MARK: - Display Mode
 enum DisplayMode: String, CaseIterable {
     case menuBarOnly = "Menu Bar Only"
@@ -321,8 +324,12 @@ struct PreferencesView: View {
 
             Divider()
 
-            // Copyright
+            // Version & Copyright
             VStack(spacing: 4) {
+                Text("TermAway v\(appVersion)")
+                    .font(.caption)
+                    .fontWeight(.medium)
+
                 Text("Created by Alex Kerber")
                     .font(.caption)
                     .foregroundColor(.secondary)
