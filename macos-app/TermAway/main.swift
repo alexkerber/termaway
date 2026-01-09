@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import IOKit.pwr_mgt
 
 // MARK: - Version
 let appVersion = "1.0.0"
@@ -19,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var localIP: String = "localhost"
     let port = "3000"
     var preferencesWindow: NSWindow?
+    var sleepAssertionID: IOPMAssertionID = 0
 
     var displayMode: DisplayMode {
         get {
@@ -29,6 +31,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(newValue.rawValue, forKey: "displayMode")
             applyDisplayMode()
         }
+    }
+
+    var preventSleep: Bool {
+        get {
+            // Default to false - user must opt-in
+            return UserDefaults.standard.bool(forKey: "preventSleep")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "preventSleep")
+            // Update assertion state if server is running
+            if isRunning {
+                if newValue {
+                    enableSleepPrevention()
+                } else {
+                    disableSleepPrevention()
+                }
+            }
+        }
+    }
+
+    func enableSleepPrevention() {
+        guard sleepAssertionID == 0 else { return } // Already active
+
+        let reason = "TermAway server is running" as CFString
+        let result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            reason,
+            &sleepAssertionID
+        )
+
+        if result != kIOReturnSuccess {
+            print("Failed to create sleep assertion: \(result)")
+            sleepAssertionID = 0
+        }
+    }
+
+    func disableSleepPrevention() {
+        guard sleepAssertionID != 0 else { return }
+
+        IOPMAssertionRelease(sleepAssertionID)
+        sleepAssertionID = 0
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -183,6 +227,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try serverProcess?.run()
             isRunning = true
+            if preventSleep {
+                enableSleepPrevention()
+            }
             updateStatusIcon()
             updateMenu()
         } catch {
@@ -215,6 +262,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         serverProcess?.terminate()
         serverProcess = nil
         isRunning = false
+        disableSleepPrevention()
         updateStatusIcon()
         updateMenu()
     }
@@ -234,7 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if preferencesWindow == nil {
             let prefsView = PreferencesView(appDelegate: self)
             preferencesWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                contentRect: NSRect(x: 0, y: 0, width: 300, height: 300),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
@@ -320,6 +368,17 @@ struct PreferencesView: View {
                 viewModel.appDelegate.displayMode = newValue
             }
 
+            Divider()
+
+            Toggle("Prevent sleep while server is running", isOn: $viewModel.preventSleep)
+                .onChange(of: viewModel.preventSleep) { newValue in
+                    viewModel.appDelegate.preventSleep = newValue
+                }
+
+            Text("Keeps your Mac awake so you can connect from your iPad anytime.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
             Spacer()
 
             Divider()
@@ -329,6 +388,16 @@ struct PreferencesView: View {
                 Text("TermAway v\(appVersion)")
                     .font(.caption)
                     .fontWeight(.medium)
+
+                // Logo
+                if let logoPath = Bundle.main.path(forResource: "Logo", ofType: "png"),
+                   let logoImage = NSImage(contentsOfFile: logoPath) {
+                    Image(nsImage: logoImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 32)
+                        .padding(.vertical, 4)
+                }
 
                 Text("Created by Alex Kerber")
                     .font(.caption)
@@ -344,17 +413,19 @@ struct PreferencesView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(20)
-        .frame(width: 280, height: 200)
+        .frame(width: 280, height: 260)
     }
 }
 
 class PreferencesViewModel: ObservableObject {
     let appDelegate: AppDelegate
     @Published var displayMode: DisplayMode
+    @Published var preventSleep: Bool
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
         self.displayMode = appDelegate.displayMode
+        self.preventSleep = appDelegate.preventSleep
     }
 }
 
