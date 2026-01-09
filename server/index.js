@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 // Configuration
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const SERVICE_NAME = process.env.SERVICE_NAME || `Claude Terminal (${os.hostname()})`;
+const SERVICE_NAME = process.env.SERVICE_NAME || `TermAway (${os.hostname()})`;
 
 // Initialize Express app
 const app = express();
