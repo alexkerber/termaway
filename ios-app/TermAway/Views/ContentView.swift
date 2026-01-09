@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @State private var showingServerSheet = false
     @State private var showingNewSession = false
+    @State private var showingThemeSettings = false
     @State private var newSessionName = ""
 
     var body: some View {
@@ -45,6 +46,13 @@ struct ContentView: View {
                                 .font(.title2)
                         }
                         .buttonStyle(.plain)
+
+                        Button(action: { showingThemeSettings = true }) {
+                            Image(systemName: "paintpalette.fill")
+                                .symbolRenderingMode(.hierarchical)
+                                .font(.title2)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     ConnectionStatusView()
@@ -54,6 +62,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingServerSheet) {
             ServerSettingsView()
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showingThemeSettings) {
+            ThemeSettingsView()
                 .presentationBackground(.ultraThinMaterial)
         }
         .alert("New Session", isPresented: $showingNewSession) {
