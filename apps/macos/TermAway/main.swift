@@ -152,46 +152,50 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
     }
 
     func applyDisplayMode() {
-        switch displayMode {
-        case .menuBarOnly:
-            NSApp.setActivationPolicy(.accessory)
-            setupStatusItem()
-        case .dockOnly:
-            NSApp.setActivationPolicy(.regular)
-            removeStatusItem()
-        case .both:
-            NSApp.setActivationPolicy(.regular)
-            setupStatusItem()
+        let showInDock = displayMode != .menuBarOnly
+        let showInMenuBar = displayMode != .dockOnly
+
+        // Handle status item: remove if not needed, create if needed
+        if showInMenuBar {
+            if statusItem == nil {
+                statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+                updateStatusIcon()
+                updateMenu()
+            }
+        } else {
+            if let item = statusItem {
+                NSStatusBar.system.removeStatusItem(item)
+                statusItem = nil
+            }
+        }
+
+        // Change activation policy
+        let newPolicy: NSApplication.ActivationPolicy = showInDock ? .regular : .accessory
+        NSApp.setActivationPolicy(newPolicy)
+
+        // Force app to process the change
+        if showInDock {
+            NSApp.activate(ignoringOtherApps: false)
         }
     }
 
-    func setupStatusItem() {
-        if statusItem == nil {
-            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        }
-        updateStatusIcon()
-        updateMenu()
+    // Prevent app from quitting when last window closes (important for menu bar mode)
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
     }
 
     func updateStatusIcon() {
         guard let button = statusItem?.button else { return }
 
-        // Load custom icon
-        if let iconPath = Bundle.main.path(forResource: "MenuIcon", ofType: "png"),
-           let icon = NSImage(contentsOfFile: iconPath) {
-            icon.size = NSSize(width: 18, height: 18)
+        // Load custom icon (Xcode bundles as tiff)
+        // Original aspect ratio: 787x465, scaled to 14pt height = ~24x14
+        if let icon = NSImage(named: "MenuIcon") {
+            icon.size = NSSize(width: 24, height: 14)
             icon.isTemplate = true  // Adapts to light/dark mode
             button.image = icon
         } else {
             // Fallback to SF Symbol
             button.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "TermAway")
-        }
-    }
-
-    func removeStatusItem() {
-        if let item = statusItem {
-            NSStatusBar.system.removeStatusItem(item)
-            statusItem = nil
         }
     }
 
@@ -745,10 +749,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
     // Handle dock icon click when in dock mode
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if displayMode == .dockOnly {
-            showPreferences()
-        }
+        showPreferences()
         return true
+    }
+
+    // Dock right-click menu
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Open Terminal", action: #selector(openBrowser), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Preferences", action: #selector(showPreferences), keyEquivalent: ""))
+        return menu
     }
 }
 
