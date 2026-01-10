@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Version - update this single value for all version references -->
+    <script>const APP_VERSION = "1.1.1";</script>
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-H0CYK2L312"></script>
     <script>
@@ -1288,9 +1291,9 @@
                 <div class="download-cards">
                     <div class="download-card">
                         <div class="icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
-                        <h3>macOS <span class="version-inline">v1.1.1</span></h3>
+                        <h3>macOS <span class="app-version">v1.1.1</span></h3>
                         <p>Menu bar app that runs the terminal server</p>
-                        <a href="https://github.com/alexkerber/termaway/releases/download/v1.1.1/TermAway-macOS-v1.1.1.zip" class="btn btn-primary">
+                        <a href="#" class="btn btn-primary download-link-macos">
                             Download for Mac
                         </a>
                     </div>
@@ -1327,7 +1330,7 @@
                     </div>
                 </div>
                 <div class="footer-right">
-                    <span class="footer-meta">Open Source · MIT License · v1.1.0</span>
+                    <span class="footer-meta">Open Source · MIT License · <span class="app-version">v1.1.1</span></span>
                     <span>Made by <a href="https://alexkerber.com" target="_blank">Alex Kerber</a></span>
                 </div>
             </div>
@@ -1335,6 +1338,14 @@
     </footer>
 
     <script>
+        // Update all version references from APP_VERSION constant
+        document.querySelectorAll('.app-version').forEach(el => {
+            el.textContent = 'v' + APP_VERSION;
+        });
+        document.querySelectorAll('.download-link-macos').forEach(el => {
+            el.href = `https://github.com/alexkerber/termaway/releases/download/v${APP_VERSION}/TermAway-macOS-v${APP_VERSION}.zip`;
+        });
+
         // Theme toggle functionality
         const themeToggles = document.querySelectorAll('.theme-toggle');
         const root = document.documentElement;
