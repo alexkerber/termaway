@@ -6,7 +6,7 @@ import UserNotifications
 import Combine
 
 // MARK: - Version
-let appVersion = "1.0.0"
+let appVersion = "1.1.0"
 
 // MARK: - Display Mode
 enum DisplayMode: String, CaseIterable {
