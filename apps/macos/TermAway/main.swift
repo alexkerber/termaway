@@ -376,6 +376,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         updateMenu()
     }
 
+    /// Restart the server (stop then start)
+    /// Used when settings that affect the server change (e.g., password)
+    func restartServer() {
+        guard isRunning else { return }
+
+        print("Restarting server due to settings change...")
+        stopServer()
+
+        // Small delay to ensure clean shutdown
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.startServer()
+        }
+    }
+
     @objc func openBrowser() {
         let url = URL(string: "http://localhost:\(port)")!
         NSWorkspace.shared.open(url)
@@ -784,16 +798,21 @@ struct PreferencesView: View {
                 Toggle("Require password", isOn: $viewModel.requirePassword)
                     .onChange(of: viewModel.requirePassword) { newValue in
                         viewModel.appDelegate.requirePassword = newValue
+                        viewModel.appDelegate.restartServer()
                     }
 
                 if viewModel.requirePassword {
                     TextField("Password", text: $viewModel.serverPassword)
                         .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            viewModel.appDelegate.serverPassword = viewModel.serverPassword
+                            viewModel.appDelegate.restartServer()
+                        }
                         .onChange(of: viewModel.serverPassword) { newValue in
                             viewModel.appDelegate.serverPassword = newValue
                         }
 
-                    Text("Restart server for changes to take effect.")
+                    Text("Press Return to apply password change.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

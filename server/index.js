@@ -68,6 +68,14 @@ const wss = new WebSocketServer({ server });
 // Initialize session manager
 const sessionManager = new SessionManager();
 
+// Restore any existing tmux sessions from previous server run
+const restoredSessions = sessionManager.restoreExistingSessions();
+if (restoredSessions.length > 0) {
+  console.log(
+    `Restored ${restoredSessions.length} tmux session(s): ${restoredSessions.join(", ")}`,
+  );
+}
+
 // Heartbeat to detect stale connections
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const wsAliveMap = new WeakMap();
@@ -356,6 +364,8 @@ function handleList(ws) {
       name,
       clientCount: info.clientCount,
       createdAt: info.createdAt,
+      isTmux: info.isTmux,
+      isConnected: info.isConnected,
     };
   });
   ws.send(JSON.stringify({ type: "sessions", list: sessions }));
@@ -627,6 +637,8 @@ function broadcastSessionList() {
       name,
       clientCount: info.clientCount,
       createdAt: info.createdAt,
+      isTmux: info.isTmux,
+      isConnected: info.isConnected,
     };
   });
 
@@ -708,20 +720,26 @@ process.on("SIGINT", () => {
   }
   bonjour.destroy();
 
-  // Kill all sessions
+  // Detach PTYs but preserve tmux sessions for persistence
+  // Only kill non-tmux sessions
   for (const name of sessionManager.list()) {
     try {
-      sessionManager.kill(name);
+      const info = sessionManager.info(name);
+      if (info && !info.isTmux) {
+        sessionManager.kill(name);
+      }
     } catch (e) {
       // Ignore errors during shutdown
     }
   }
+  // Detach all PTYs (tmux sessions will persist)
+  sessionManager.detachAllPtys();
 
   // Close WebSocket server
   wss.close(() => {
     // Close HTTP server
     server.close(() => {
-      console.log("Server stopped");
+      console.log("Server stopped (tmux sessions preserved)");
       process.exit(0);
     });
   });
