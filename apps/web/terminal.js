@@ -184,6 +184,7 @@ function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}`;
 
+  updateConnectionStatus("connecting");
   ws = new WebSocket(wsUrl);
   isAuthenticated = false;
   authRequired = false;
@@ -212,6 +213,7 @@ function connect() {
 
   ws.onerror = (error) => {
     console.error("WebSocket error:", error);
+    updateConnectionStatus("failed");
   };
 }
 
@@ -261,6 +263,10 @@ function updateConnectionStatus(status) {
   const disconnectBtn = document.getElementById("disconnect-btn");
 
   switch (status) {
+    case "connecting":
+      statusText.textContent = "Connecting...";
+      if (disconnectBtn) disconnectBtn.style.display = "none";
+      break;
     case "connected":
       statusText.textContent = "Connected";
       if (disconnectBtn) disconnectBtn.style.display = "inline-block";
@@ -270,11 +276,11 @@ function updateConnectionStatus(status) {
       if (disconnectBtn) disconnectBtn.style.display = "none";
       break;
     case "reconnecting":
-      statusText.textContent = "Reconnecting...";
+      statusText.textContent = `Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`;
       if (disconnectBtn) disconnectBtn.style.display = "none";
       break;
     case "failed":
-      statusText.textContent = "Failed - Click to retry";
+      statusText.textContent = "Failed - Tap to retry";
       if (disconnectBtn) disconnectBtn.style.display = "none";
       break;
   }

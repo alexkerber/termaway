@@ -210,27 +210,97 @@ body {
 #connection-status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 12px;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 20px;
   background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
 }
 
 #connection-status .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background-color: var(--accent-danger);
+  flex-shrink: 0;
+  transition: background-color 0.3s ease;
+}
+
+/* Connected state - green with subtle glow */
+#connection-status.connected {
+  background-color: rgba(63, 185, 80, 0.1);
+  border-color: var(--accent-success);
 }
 
 #connection-status.connected .status-dot {
   background-color: var(--accent-success);
+  box-shadow: 0 0 8px var(--accent-success);
+}
+
+#connection-status.connected .status-text {
+  color: var(--accent-success);
+}
+
+/* Connecting state - amber with spinner */
+#connection-status.connecting {
+  background-color: rgba(255, 182, 39, 0.1);
+  border-color: var(--accent-amber);
+}
+
+#connection-status.connecting .status-dot {
+  background-color: transparent;
+  border: 2px solid var(--accent-amber);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+#connection-status.connecting .status-text {
+  color: var(--accent-amber);
+}
+
+/* Reconnecting state - amber with spinner */
+#connection-status.reconnecting {
+  background-color: rgba(255, 182, 39, 0.1);
+  border-color: var(--accent-warning);
 }
 
 #connection-status.reconnecting .status-dot {
-  background-color: var(--accent-warning);
-  animation: pulse 1s infinite;
+  background-color: transparent;
+  border: 2px solid var(--accent-warning);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+#connection-status.reconnecting .status-text {
+  color: var(--accent-warning);
+}
+
+/* Disconnected state - muted */
+#connection-status.disconnected {
+  cursor: pointer;
+}
+
+#connection-status.disconnected .status-dot {
+  background-color: var(--text-muted);
+}
+
+#connection-status.disconnected:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--accent-primary);
+}
+
+#connection-status.disconnected:hover .status-text {
+  color: var(--accent-primary);
+}
+
+/* Failed state - red with pulse */
+#connection-status.failed {
+  background-color: rgba(248, 81, 73, 0.1);
+  border-color: var(--accent-danger);
+  cursor: pointer;
 }
 
 #connection-status.failed .status-dot {
@@ -238,28 +308,35 @@ body {
   animation: pulse 1s infinite;
 }
 
-#connection-status.disconnected,
-#connection-status.failed {
-  cursor: pointer;
+#connection-status.failed .status-text {
+  color: var(--accent-danger);
 }
 
-#connection-status.disconnected:hover,
 #connection-status.failed:hover {
-  background-color: var(--bg-secondary);
+  background-color: rgba(248, 81, 73, 0.15);
 }
 
 @keyframes pulse {
   0%,
   100% {
     opacity: 1;
+    transform: scale(1);
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
 #connection-status .status-text {
   color: var(--text-secondary);
+  transition: color 0.3s ease;
 }
 
 /* Terminal Container */
@@ -454,8 +531,15 @@ body {
     height: 28px;
   }
 
-  #connection-status .status-text {
-    display: none;
+  /* Show abbreviated status text on mobile for better feedback */
+  #connection-status {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  #connection-status .status-dot {
+    width: 8px;
+    height: 8px;
   }
 
   #terminal {
