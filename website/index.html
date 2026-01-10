@@ -14,12 +14,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TermAway - Your Mac Terminal, On Your iPad</title>
     <meta name="description" content="Access your Mac's terminal from your iPad or any device. Perfect for coding from bed while your Mac stays connected to your displays.">
-    <link rel="icon" type="image/svg+xml" href="icon.svg" media="(prefers-color-scheme: dark)">
-    <link rel="icon" type="image/svg+xml" href="icon-light.svg" media="(prefers-color-scheme: light)">
-    <link rel="icon" type="image/svg+xml" href="icon.svg">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.min.css" rel="stylesheet">
+
+    <!-- Open Graph / Social Share -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://termaway.app/">
+    <meta property="og:title" content="TermAway - Your Mac Terminal, On Your iPad">
+    <meta property="og:description" content="Access your Mac's terminal from your iPad. LAN-only, no cloud, no tracking. Run Claude Code, git, docker, npm - your full dev environment, in your hands.">
+    <meta property="og:image" content="https://termaway.app/assets/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="TermAway - Your Mac Terminal, On Your iPad">
+    <meta name="twitter:description" content="Access your Mac's terminal from your iPad. LAN-only, no cloud, no tracking. Run Claude Code, git, docker, npm - your full dev environment, in your hands.">
+    <meta name="twitter:image" content="https://termaway.app/assets/og-image.png">
+
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Apple Web App -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TermAway">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+
+    <link rel="icon" type="image/png" href="assets/favicon-dark.png" media="(prefers-color-scheme: dark)">
+    <link rel="icon" type="image/png" href="assets/favicon-light.png" media="(prefers-color-scheme: light)">
+    <link rel="icon" type="image/png" href="assets/favicon-light.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -34,15 +59,20 @@
             --border-glass: rgba(255, 255, 255, 0.1);
             --text-primary: #ffffff;
             --text-secondary: rgba(255, 255, 255, 0.6);
-            --accent-blue: #58a6ff;
+            --accent-orange: #FF6B35;
             --accent-green: #3fb950;
-            --accent-purple: #a855f7;
+            --accent-warm: #D4A574;
             --accent-cyan: #22d3ee;
-            --glow-blue: rgba(88, 166, 255, 0.4);
-            --glow-purple: rgba(168, 85, 247, 0.3);
+            --glow-orange: rgba(255, 107, 53, 0.4);
+            --glow-warm: rgba(255, 182, 39, 0.2);
             --nav-bg: rgba(10, 10, 15, 0.8);
             --terminal-bg: #0d1117;
-            --grid-color: rgba(255, 255, 255, 0.02);
+            --terminal-header-bg: rgba(255, 255, 255, 0.05);
+            --terminal-text: #ffffff;
+            --terminal-text-secondary: rgba(255, 255, 255, 0.6);
+            --grid-color: rgba(254, 243, 226, 0.03);
+            --device-bg: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+            --device-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 80px var(--glow-warm);
         }
 
         /* Light mode via data attribute */
@@ -50,18 +80,23 @@
             --bg-dark: #f5f5f7;
             --bg-card: rgba(0, 0, 0, 0.03);
             --bg-glass: rgba(0, 0, 0, 0.05);
-            --border-glass: rgba(0, 0, 0, 0.1);
+            --border-glass: rgba(0, 0, 0, 0.12);
             --text-primary: #1d1d1f;
             --text-secondary: rgba(0, 0, 0, 0.6);
-            --accent-blue: #0066cc;
-            --accent-green: #28a745;
-            --accent-purple: #7c3aed;
+            --accent-orange: #E55A2B;
+            --accent-green: #22863a;
+            --accent-warm: #B8956B;
             --accent-cyan: #0891b2;
-            --glow-blue: rgba(0, 102, 204, 0.2);
-            --glow-purple: rgba(124, 58, 237, 0.15);
+            --glow-orange: rgba(255, 107, 53, 0.15);
+            --glow-warm: rgba(255, 182, 39, 0.1);
             --nav-bg: rgba(245, 245, 247, 0.8);
-            --terminal-bg: #1a1a2e;
-            --grid-color: rgba(0, 0, 0, 0.03);
+            --terminal-bg: #ffffff;
+            --terminal-header-bg: rgba(0, 0, 0, 0.04);
+            --terminal-text: #24292f;
+            --terminal-text-secondary: rgba(0, 0, 0, 0.5);
+            --grid-color: rgba(45, 41, 38, 0.04);
+            --device-bg: linear-gradient(145deg, #ffffff, #f0f0f5);
+            --device-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 10px 30px rgba(0, 0, 0, 0.1);
         }
 
         /* System preference light mode (when no manual choice) */
@@ -70,18 +105,23 @@
                 --bg-dark: #f5f5f7;
                 --bg-card: rgba(0, 0, 0, 0.03);
                 --bg-glass: rgba(0, 0, 0, 0.05);
-                --border-glass: rgba(0, 0, 0, 0.1);
+                --border-glass: rgba(0, 0, 0, 0.12);
                 --text-primary: #1d1d1f;
                 --text-secondary: rgba(0, 0, 0, 0.6);
-                --accent-blue: #0066cc;
-                --accent-green: #28a745;
-                --accent-purple: #7c3aed;
+                --accent-orange: #E55A2B;
+                --accent-green: #22863a;
+                --accent-warm: #B8956B;
                 --accent-cyan: #0891b2;
-                --glow-blue: rgba(0, 102, 204, 0.2);
-                --glow-purple: rgba(124, 58, 237, 0.15);
-                    --nav-bg: rgba(245, 245, 247, 0.8);
-                --terminal-bg: #1a1a2e;
-                --grid-color: rgba(0, 0, 0, 0.03);
+                --glow-orange: rgba(255, 107, 53, 0.15);
+                --glow-warm: rgba(255, 182, 39, 0.1);
+                --nav-bg: rgba(245, 245, 247, 0.8);
+                --terminal-bg: #ffffff;
+                --terminal-header-bg: rgba(0, 0, 0, 0.04);
+                --terminal-text: #24292f;
+                --terminal-text-secondary: rgba(0, 0, 0, 0.5);
+                --grid-color: rgba(45, 41, 38, 0.04);
+                --device-bg: linear-gradient(145deg, #ffffff, #f0f0f5);
+                --device-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 10px 30px rgba(0, 0, 0, 0.1);
             }
         }
 
@@ -90,14 +130,14 @@
         }
 
         body {
-            font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--bg-dark);
             color: var(--text-primary);
             line-height: 1.6;
             overflow-x: hidden;
         }
 
-        /* Animated gradient background */
+        /* Animated gradient background - warm retro tones */
         .bg-gradient {
             position: fixed;
             top: 0;
@@ -105,9 +145,9 @@
             right: 0;
             bottom: 0;
             background:
-                radial-gradient(ellipse at 20% 20%, rgba(88, 166, 255, 0.15) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 80%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 50%, rgba(34, 211, 238, 0.05) 0%, transparent 70%);
+                radial-gradient(ellipse at 20% 20%, rgba(255, 182, 39, 0.12) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(255, 107, 53, 0.10) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(254, 243, 226, 0.06) 0%, transparent 60%);
             animation: gradientMove 20s ease-in-out infinite;
             z-index: -1;
         }
@@ -160,15 +200,12 @@
         .logo {
             display: flex;
             align-items: center;
-            gap: 12px;
-            font-weight: 700;
-            font-size: 1.25rem;
+            gap: 10px;
             text-decoration: none;
-            color: var(--text-primary);
         }
 
-        .logo img.logo-svg {
-            height: 36px;
+        .logo img.logo-icon {
+            height: 24px;
             width: auto;
         }
 
@@ -177,6 +214,33 @@
 
         [data-theme="light"] .logo .logo-dark { display: none; }
         [data-theme="light"] .logo .logo-light { display: block; }
+
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) .logo .logo-dark { display: none; }
+            :root:not([data-theme]) .logo .logo-light { display: block; }
+        }
+
+        .logo h1,
+        .logo span {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            line-height: 1;
+            letter-spacing: -0.02em;
+            color: #FEF3E2;
+        }
+
+        [data-theme="light"] .logo h1,
+        [data-theme="light"] .logo span {
+            color: #2D2926;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) .logo h1,
+            :root:not([data-theme]) .logo span {
+                color: #2D2926;
+            }
+        }
 
         .nav-links {
             display: flex;
@@ -213,7 +277,7 @@
 
         .theme-toggle:hover {
             background: var(--bg-card);
-            border-color: var(--accent-blue);
+            border-color: var(--accent-orange);
         }
 
         .theme-toggle .icon-sun,
@@ -246,14 +310,13 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            background: var(--accent-orange);
             color: white;
-            box-shadow: 0 4px 20px var(--glow-blue);
         }
 
         .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 30px var(--glow-blue);
+            background: #E55A2B;
+            transform: translateY(-1px);
         }
 
         .btn-glass {
@@ -296,18 +359,38 @@
             border: 1px solid var(--border-glass);
             border-radius: 50px;
             font-size: 0.85rem;
-            color: var(--accent-cyan);
+            color: #FFB627;
             margin-bottom: 24px;
             backdrop-filter: blur(10px);
+        }
+
+        [data-theme="light"] .badge {
+            color: #E55A2B;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) .badge {
+                color: #E55A2B;
+            }
         }
 
         .badge::before {
             content: '';
             width: 8px;
             height: 8px;
-            background: var(--accent-green);
+            background: #FFB627;
             border-radius: 50%;
             animation: pulse 2s infinite;
+        }
+
+        [data-theme="light"] .badge::before {
+            background: #E55A2B;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) .badge::before {
+                background: #E55A2B;
+            }
         }
 
         @keyframes pulse {
@@ -315,18 +398,34 @@
             50% { opacity: 0.5; }
         }
 
-        h1 {
+        .hero-title {
             font-size: clamp(2.5rem, 5vw, 4rem);
             font-weight: 800;
             line-height: 1.1;
             margin-bottom: 24px;
         }
 
-        h1 .gradient {
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple), var(--accent-cyan));
+        .hero-title .gradient {
+            background: linear-gradient(90deg, #FFB627, #FF6B35);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
+        }
+
+        [data-theme="light"] .hero-title .gradient {
+            background: linear-gradient(90deg, #E55A2B, #C44B1C);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root:not([data-theme]) .hero-title .gradient {
+                background: linear-gradient(90deg, #E55A2B, #C44B1C);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
         }
 
         .hero-description {
@@ -352,14 +451,12 @@
 
         .device-mockup {
             position: relative;
-            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+            background: var(--device-bg);
             border: 1px solid var(--border-glass);
             border-radius: 24px;
             padding: 20px;
             backdrop-filter: blur(20px);
-            box-shadow:
-                0 25px 50px -12px rgba(0, 0, 0, 0.5),
-                0 0 100px var(--glow-purple);
+            box-shadow: var(--device-shadow);
         }
 
         .terminal-window {
@@ -373,7 +470,7 @@
             align-items: center;
             gap: 8px;
             padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--terminal-header-bg);
         }
 
         .terminal-dot {
@@ -390,12 +487,12 @@
             flex: 1;
             text-align: center;
             font-size: 0.85rem;
-            color: var(--text-secondary);
+            color: var(--terminal-text-secondary);
         }
 
         .terminal-body {
             padding: 20px;
-            font-family: 'Geist Mono', 'SF Mono', monospace;
+            font-family: 'Geist Mono', 'SF Mono', 'Menlo', monospace;
             font-size: 0.9rem;
             line-height: 1.8;
             min-height: 300px;
@@ -411,18 +508,18 @@
         }
 
         .terminal-command {
-            color: var(--text-primary);
+            color: var(--terminal-text);
         }
 
         .terminal-output {
-            color: var(--text-secondary);
+            color: var(--terminal-text-secondary);
         }
 
         .cursor {
             display: inline-block;
             width: 10px;
             height: 20px;
-            background: var(--accent-blue);
+            background: var(--accent-orange);
             animation: blink 1s infinite;
             vertical-align: middle;
             margin-left: 2px;
@@ -448,6 +545,7 @@
             font-size: 2.5rem;
             font-weight: 700;
             margin-bottom: 16px;
+            line-height: 1.2;
         }
 
         .section-header p {
@@ -477,22 +575,23 @@
         }
 
         .feature-icon {
-            width: 56px;
-            height: 56px;
+            width: 48px;
+            height: 48px;
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 16px;
-            font-size: 1.5rem;
+            border-radius: 12px;
             margin-bottom: 20px;
+            background: rgba(255, 182, 39, 0.1);
         }
 
-        .feature-icon.blue { background: rgba(88, 166, 255, 0.15); }
-        .feature-icon.purple { background: rgba(168, 85, 247, 0.15); }
-        .feature-icon.green { background: rgba(63, 185, 80, 0.15); }
-        .feature-icon.cyan { background: rgba(34, 211, 238, 0.15); }
-        .feature-icon.orange { background: rgba(251, 146, 60, 0.15); }
-        .feature-icon.pink { background: rgba(236, 72, 153, 0.15); }
+        .feature-icon svg {
+            width: 24px;
+            height: 24px;
+            stroke: #FFB627;
+            stroke-width: 1.5;
+            fill: none;
+        }
 
         .feature-card h3 {
             font-size: 1.25rem;
@@ -571,9 +670,16 @@
         }
 
         .emoji-card .emoji {
-            font-size: 3rem;
             margin-bottom: 12px;
             display: block;
+        }
+
+        .emoji-card .emoji svg {
+            width: 40px;
+            height: 40px;
+            stroke: #FFB627;
+            stroke-width: 1.5;
+            fill: none;
         }
 
         .emoji-card span:last-child {
@@ -625,8 +731,8 @@
         }
 
         .download-card:hover {
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 40px var(--glow-blue);
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 40px var(--glow-orange);
         }
 
         .download-card.coming-soon {
@@ -634,8 +740,15 @@
         }
 
         .download-card .icon {
-            font-size: 4rem;
             margin-bottom: 20px;
+        }
+
+        .download-card .icon svg {
+            width: 56px;
+            height: 56px;
+            stroke: #FFB627;
+            stroke-width: 1.5;
+            fill: none;
         }
 
         .download-card h3 {
@@ -669,7 +782,7 @@
             justify-content: center;
             width: 100%;
             padding: 16px 24px;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            background: var(--accent-orange);
             color: white;
             border: none;
             border-radius: 50px;
@@ -722,7 +835,7 @@
         }
 
         .footer-right a {
-            color: var(--accent-blue);
+            color: var(--accent-orange);
             text-decoration: none;
         }
 
@@ -768,26 +881,168 @@
         }
 
         @media (max-width: 640px) {
+            /* Consistent container padding */
+            .container {
+                padding: 0 20px;
+            }
+
+            /* Center nav on mobile */
+            nav .container {
+                justify-content: center;
+            }
+
             .nav-links {
                 display: none;
             }
 
-            h1 {
-                font-size: 2rem;
+            /* Smaller hero text */
+            .hero-title {
+                font-size: 1.75rem;
+            }
+
+            .hero-description {
+                font-size: 1rem;
+            }
+
+            .hero {
+                min-height: auto;
+                padding: 100px 0 40px;
+            }
+
+            .hero-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .hero-buttons .btn-primary {
+                width: auto;
+            }
+
+            /* Convert GitHub button to text link on mobile */
+            .hero-buttons .btn-glass {
+                background: none;
+                border: none;
+                padding: 12px 0;
+                font-size: 0.95rem;
+                color: var(--accent-orange);
+            }
+
+            .hero-buttons .btn-glass:hover {
+                background: none;
+            }
+
+            .hero-buttons .btn-glass svg {
+                display: none;
+            }
+
+            /* Hide terminal mockup on mobile */
+            .hero-visual {
+                display: none;
+            }
+
+            /* Section headers */
+            .section-header {
+                margin-bottom: 32px;
+                padding: 0 20px;
+            }
+
+            .section-header h2 {
+                font-size: 1.5rem;
+                line-height: 1.2;
+            }
+
+            .section-header p {
+                font-size: 0.95rem;
+            }
+
+            /* Horizontal carousel for features */
+            .features {
+                padding: 60px 0;
+            }
+
+            .features .container {
+                padding: 0;
             }
 
             .features-grid {
-                grid-template-columns: 1fr;
+                display: flex;
+                overflow-x: auto;
+                scroll-snap-type: x mandatory;
+                -webkit-overflow-scrolling: touch;
+                gap: 16px;
+                padding: 16px 20px 24px 20px;
+                scroll-padding-left: 20px;
+            }
+
+            .features-grid::-webkit-scrollbar {
+                display: none;
+            }
+
+            .feature-card {
+                flex: 0 0 280px;
+                scroll-snap-align: start;
+                padding: 24px;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            }
+
+            .feature-card:hover {
+                transform: none;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            }
+
+            .feature-card h3 {
+                font-size: 1.1rem;
+            }
+
+            .feature-card p {
+                font-size: 0.85rem;
+            }
+
+            /* Tighter use-case section */
+            .use-cases {
+                padding: 60px 0;
             }
 
             .use-case-card {
-                padding: 32px;
+                padding: 20px;
+            }
+
+            .use-case-content h2 {
+                font-size: 1.5rem;
+            }
+
+            .use-case-content p {
+                font-size: 0.95rem;
             }
 
             .emoji-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
             }
 
+            .emoji-card {
+                padding: 16px;
+            }
+
+            .emoji-card .emoji svg {
+                width: 32px;
+                height: 32px;
+            }
+
+            /* Download section */
+            .download {
+                padding: 60px 0;
+            }
+
+            .download h2 {
+                font-size: 1.75rem;
+            }
+
+            .download-card {
+                padding: 24px;
+            }
+
+            /* Footer centered */
             .footer-content {
                 flex-direction: column;
                 gap: 24px;
@@ -796,6 +1051,11 @@
 
             .footer-left {
                 flex-direction: column;
+                align-items: center;
+            }
+
+            .footer-right {
+                text-align: center;
             }
         }
     </style>
@@ -807,8 +1067,9 @@
     <nav>
         <div class="container">
             <a href="#" class="logo">
-                <img src="logo.svg" alt="TermAway" class="logo-svg logo-dark">
-                <img src="logo-light.svg" alt="TermAway" class="logo-svg logo-light">
+                <img src="assets/logotype.svg" alt="TermAway Logo" class="logo-icon logo-dark">
+                <img src="assets/logotype-light.svg" alt="TermAway Logo" class="logo-icon logo-light">
+                <h1>TermAway</h1>
             </a>
             <div class="nav-links">
                 <a href="#features">Features</a>
@@ -840,7 +1101,7 @@
             <div class="hero-content">
                 <div class="hero-text">
                     <div class="badge">Open Source & Free</div>
-                    <h1>Your Mac terminal,<br><span class="gradient">on your iPad</span></h1>
+                    <h2 class="hero-title">Your Mac terminal,<br><span class="gradient">on your iPad</span></h2>
                     <p class="hero-description">
                         Access your terminal from anywhere on your local network.
                         <strong>LAN-only by design</strong> — your terminal never leaves your network.
@@ -878,13 +1139,13 @@
                                     <span class="terminal-command">claude</span>
                                 </div>
                                 <div class="terminal-output" style="margin: 12px 0;">
-                                    <span style="color: var(--accent-purple);">╭─────────────────────────────────╮</span><br>
-                                    <span style="color: var(--accent-purple);">│</span> <span style="color: var(--accent-cyan);">Claude Code</span> <span style="color: var(--text-secondary);">v2.1.1</span> <span style="color: var(--accent-purple);">          │</span><br>
-                                    <span style="color: var(--accent-purple);">╰─────────────────────────────────╯</span>
+                                    <span style="color: var(--accent-warm);">╭─────────────────────────────────╮</span><br>
+                                    <span style="color: var(--accent-warm);">│</span> <span style="color: var(--accent-cyan);">Claude Code</span> <span style="color: var(--terminal-text-secondary);">v2.1.3</span> <span style="color: var(--accent-warm);">          │</span><br>
+                                    <span style="color: var(--accent-warm);">╰─────────────────────────────────╯</span>
                                 </div>
                                 <div class="terminal-line" style="margin-top: 16px;">
                                     <span class="terminal-prompt">~/projects</span>
-                                    <span class="terminal-command">npm run dev</span>
+                                    <span class="terminal-command">bun run dev</span>
                                 </div>
                                 <div class="terminal-output" style="margin: 8px 0; color: var(--accent-green);">
                                     ✓ Server running at localhost:3000
@@ -909,32 +1170,44 @@
             </div>
             <div class="features-grid">
                 <div class="feature-card">
-                    <div class="feature-icon blue">🖥️</div>
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    </div>
                     <h3>Multi-Project Workflow</h3>
                     <p>Frontend in one tab, backend in another, infra in a third. Manage complex projects with multiple sessions.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon purple">🔒</div>
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
                     <h3>LAN-Only Security</h3>
                     <p>Your terminal never leaves your network. No cloud servers, no accounts, no data collection.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon green">⚡</div>
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    </div>
                     <h3>Real Terminal Access</h3>
                     <p>Not a wrapper. Full PTY with proper shell, environment variables, and tool support.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon cyan">📱</div>
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    </div>
                     <h3>Touch Optimized</h3>
                     <p>Special toolbar with Ctrl, Alt, Esc, Tab, and arrow keys. Built for iPad.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon orange">🔍</div>
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    </div>
                     <h3>Zero Config</h3>
                     <p>Bonjour auto-discovery finds your Mac instantly. Install, connect, code.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon pink">🎨</div>
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="4"/></svg>
+                    </div>
                     <h3>Native Performance</h3>
                     <p>SwiftTerm-powered with GPU rendering. Smooth scrolling, proper colors, feels native.</p>
                 </div>
@@ -960,19 +1233,19 @@
                 </div>
                 <div class="emoji-grid">
                     <div class="emoji-card">
-                        <span class="emoji">🛋️</span>
+                        <span class="emoji"><svg viewBox="0 0 24 24"><path d="M20 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/><path d="M2 11v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v2H6v-2a2 2 0 0 0-4 0Z"/><path d="M4 18v2"/><path d="M20 18v2"/></svg></span>
                         <span>Couch coding</span>
                     </div>
                     <div class="emoji-card">
-                        <span class="emoji">🛏️</span>
+                        <span class="emoji"><svg viewBox="0 0 24 24"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg></span>
                         <span>Bed debugging</span>
                     </div>
                     <div class="emoji-card">
-                        <span class="emoji">☕</span>
+                        <span class="emoji"><svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg></span>
                         <span>Coffee table commits</span>
                     </div>
                     <div class="emoji-card">
-                        <span class="emoji">🌙</span>
+                        <span class="emoji"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span>
                         <span>Late night deploys</span>
                     </div>
                 </div>
@@ -987,15 +1260,15 @@
                 <p class="section-subtitle">Choose your platform and start coding remotely</p>
                 <div class="download-cards">
                     <div class="download-card">
-                        <div class="icon">🖥️</div>
-                        <h3>macOS <span class="version-inline">v1.0.0</span></h3>
+                        <div class="icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+                        <h3>macOS <span class="version-inline">v1.0.1</span></h3>
                         <p>Menu bar app that runs the terminal server</p>
-                        <a href="https://github.com/alexkerber/termaway/releases/download/v1.0.0/TermAway-macOS-v1.0.0.zip" class="btn btn-primary">
+                        <a href="https://github.com/alexkerber/termaway/releases/download/v1.0.1/TermAway-macOS-v1.0.1.zip" class="btn btn-primary">
                             Download for Mac
                         </a>
                     </div>
                     <div class="download-card coming-soon">
-                        <div class="icon">📱</div>
+                        <div class="icon"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
                         <h3>iOS / iPadOS</h3>
                         <p>Native app with SwiftTerm</p>
                         <span class="coming-soon-badge">Coming Soon</span>
@@ -1016,8 +1289,9 @@
             <div class="footer-content">
                 <div class="footer-left">
                     <a href="#" class="logo">
-                        <img src="logo.svg" alt="TermAway" class="logo-svg logo-dark">
-                        <img src="logo-light.svg" alt="TermAway" class="logo-svg logo-light">
+                        <img src="assets/logotype.svg" alt="TermAway Logo" class="logo-icon logo-dark">
+                        <img src="assets/logotype-light.svg" alt="TermAway Logo" class="logo-icon logo-light">
+                        <span>TermAway</span>
                     </a>
                     <div class="footer-links">
                         <a href="https://github.com/alexkerber/termaway" target="_blank">GitHub</a>
@@ -1026,7 +1300,7 @@
                     </div>
                 </div>
                 <div class="footer-right">
-                    <span class="footer-meta">Open Source · MIT License · v1.0.0</span>
+                    <span class="footer-meta">Open Source · MIT License · v1.0.1</span>
                     <span>Made by <a href="https://alexkerber.com" target="_blank">Alex Kerber</a></span>
                 </div>
             </div>

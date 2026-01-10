@@ -28,7 +28,7 @@ class SessionManager {
 
   create(name) {
     if (this.sessions.has(name)) {
-      throw new Error(\`Session "\${name}" already exists\`);
+      throw new Error(`Session "${name}" already exists`);
     }
 
     const shell = process.env.SHELL || '/bin/bash';
@@ -78,7 +78,7 @@ class SessionManager {
     });
 
     ptyProcess.onExit(({ exitCode, signal }) => {
-      console.log(\`Session "\${name}" exited with code \${exitCode}, signal \${signal}\`);
+      console.log(`Session "${name}" exited with code ${exitCode}, signal ${signal}`);
       for (const client of session.clients) {
         if (client.readyState === 1) {
           client.send(JSON.stringify({
@@ -93,14 +93,14 @@ class SessionManager {
     });
 
     this.sessions.set(name, session);
-    console.log(\`Created session "\${name}" with shell \${shell}\`);
+    console.log(`Created session "${name}" with shell ${shell}`);
     return session;
   }
 
   attach(name, ws) {
     const session = this.sessions.get(name);
     if (!session) {
-      throw new Error(\`Session "\${name}" not found\`);
+      throw new Error(`Session "${name}" not found`);
     }
 
     session.clients.add(ws);
@@ -112,7 +112,7 @@ class SessionManager {
       }));
     }
 
-    console.log(\`Client attached to session "\${name}" (\${session.clients.size} clients)\`);
+    console.log(`Client attached to session "${name}" (${session.clients.size} clients)`);
     return session;
   }
 
@@ -120,7 +120,7 @@ class SessionManager {
     const session = this.sessions.get(name);
     if (session) {
       session.clients.delete(ws);
-      console.log(\`Client detached from session "\${name}" (\${session.clients.size} clients)\`);
+      console.log(`Client detached from session "${name}" (${session.clients.size} clients)`);
     }
   }
 
@@ -128,7 +128,7 @@ class SessionManager {
     for (const [name, session] of this.sessions) {
       if (session.clients.has(ws)) {
         session.clients.delete(ws);
-        console.log(\`Client detached from session "\${name}" (\${session.clients.size} clients)\`);
+        console.log(`Client detached from session "${name}" (${session.clients.size} clients)`);
       }
     }
   }
@@ -136,7 +136,7 @@ class SessionManager {
   write(name, data) {
     const session = this.sessions.get(name);
     if (!session) {
-      throw new Error(\`Session "\${name}" not found\`);
+      throw new Error(`Session "${name}" not found`);
     }
     session.pty.write(data);
   }
@@ -144,16 +144,16 @@ class SessionManager {
   resize(name, cols, rows) {
     const session = this.sessions.get(name);
     if (!session) {
-      throw new Error(\`Session "\${name}" not found\`);
+      throw new Error(`Session "${name}" not found`);
     }
     session.pty.resize(cols, rows);
-    console.log(\`Resized session "\${name}" to \${cols}x\${rows}\`);
+    console.log(`Resized session "${name}" to ${cols}x${rows}`);
   }
 
   kill(name) {
     const session = this.sessions.get(name);
     if (!session) {
-      throw new Error(\`Session "\${name}" not found\`);
+      throw new Error(`Session "${name}" not found`);
     }
 
     session.pty.kill();
@@ -167,15 +167,15 @@ class SessionManager {
     }
 
     this.sessions.delete(name);
-    console.log(\`Killed session "\${name}"\`);
+    console.log(`Killed session "${name}"`);
   }
 
   rename(oldName, newName) {
     if (!this.sessions.has(oldName)) {
-      throw new Error(\`Session "\${oldName}" not found\`);
+      throw new Error(`Session "${oldName}" not found`);
     }
     if (this.sessions.has(newName)) {
-      throw new Error(\`Session "\${newName}" already exists\`);
+      throw new Error(`Session "${newName}" already exists`);
     }
 
     const session = this.sessions.get(oldName);
@@ -193,7 +193,7 @@ class SessionManager {
       }
     }
 
-    console.log(\`Renamed session "\${oldName}" to "\${newName}"\`);
+    console.log(`Renamed session "${oldName}" to "${newName}"`);
   }
 
   info(name) {
@@ -211,7 +211,7 @@ class SessionManager {
 
   setClipboard(content) {
     this.sharedClipboard = content || '';
-    console.log(\`Clipboard updated (\${this.sharedClipboard.length} chars)\`);
+    console.log(`Clipboard updated (${this.sharedClipboard.length} chars)`);
   }
 
   getClipboard() {

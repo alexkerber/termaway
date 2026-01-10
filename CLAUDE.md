@@ -16,6 +16,21 @@ node --watch server/index.js  # Start with auto-reload
 
 Note: node-pty requires Node.js runtime (not bun) due to native bindings.
 
+## Project Structure
+
+```
+termaway/
+├── apps/
+│   ├── ios/          # iOS/iPadOS app (SwiftUI + SwiftTerm)
+│   ├── macos/        # macOS menu bar app (AppKit)
+│   └── web/          # Web terminal client (xterm.js)
+├── server/           # Node.js WebSocket server
+├── website/          # Marketing site (termaway.app)
+│   └── assets/       # Images, icons
+├── builds/           # Build outputs (.app, .zip)
+└── docs/             # Documentation
+```
+
 ## Architecture
 
 This is a web-based terminal application that provides remote terminal access over WebSocket. It uses node-pty for pseudo-terminal emulation and xterm.js for browser rendering.
@@ -32,15 +47,20 @@ This is a web-based terminal application that provides remote terminal access ov
 
 ### iOS App (SwiftUI + SwiftTerm)
 
-- **ios-app/**: Native iOS/iPadOS client using SwiftTerm for terminal emulation
+- **apps/ios/**: Native iOS/iPadOS client using SwiftTerm for terminal emulation
 - Connects via WebSocket to the server
 - Bonjour discovery for finding servers on LAN
 
 ### macOS App (AppKit)
 
-- **macos-app/**: Menu bar app that runs the terminal server
+- **apps/macos/**: Menu bar app that runs the terminal server
 - Manages server lifecycle (start/stop)
 - Shows connection URL
+
+### Web Client
+
+- **apps/web/**: Browser-based terminal client using xterm.js
+- PWA support for home screen installation
 
 ### Website
 
@@ -49,12 +69,19 @@ This is a web-based terminal application that provides remote terminal access ov
 ### WebSocket Protocol
 
 Client → Server:
+
 - `create` / `attach` / `detach` / `kill` / `rename` - session lifecycle
 - `input` / `resize` - terminal I/O
 - `list` - get all sessions
+- `auth` - authentication
+- `clipboard-set` / `clipboard-get` - clipboard sync
 
 Server → Client:
+
 - `output` - terminal data
 - `sessions` - session list updates (broadcast to all clients)
 - `attached` / `created` / `killed` / `renamed` / `exited` - confirmations
+- `auth-required` / `auth-success` / `auth-failed` - authentication
+- `client-connected` / `client-disconnected` - connection notifications
+- `clipboard-update` / `clipboard-content` - clipboard sync
 - `error` - error messages

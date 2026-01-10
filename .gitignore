@@ -1,6 +1,16 @@
 node_modules/
 .DS_Store
 *.log
-macos-app/*.app/
+
+# Build outputs
+builds/
+apps/macos/*.app/
+*.zip
+
+# Xcode
 xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# Claude
 .claude/
