@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="/xterm/css/xterm.css">
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
   <!-- Apply theme immediately to prevent flash -->
   <script>
     (function() {
@@ -37,9 +37,9 @@
         <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar">⌨</button>
         <button class="header-btn" id="theme-toggle-header" title="Toggle theme">◐</button>
         <button class="header-btn" id="settings-btn-header" title="Settings">⚙</button>
-        <span id="connection-status" class="disconnected" title="Click to disconnect/reconnect">
+        <span id="connection-status" class="connecting" title="Connection status">
           <span class="status-dot"></span>
-          <span class="status-text">Disconnected</span>
+          <span class="status-text">Connecting...</span>
         </span>
         <button class="header-btn" id="disconnect-btn" title="Disconnect" style="display:none;">⏻</button>
       </div>
@@ -124,6 +124,6 @@
     </div>
   </div>
 
-  <script src="terminal.js?v=11"></script>
+  <script src="terminal.js?v=12"></script>
 </body>
 </html>
