@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import UserNotifications
 
 @MainActor
 class ConnectionManager: ObservableObject {
@@ -321,6 +322,14 @@ class ConnectionManager: ObservableObject {
             // Clipboard was successfully set on server
             return
 
+        case "client-connected":
+            // Another client connected to the server
+            if let clientIP = json["clientIP"] as? String,
+               clientIP != "127.0.0.1" && clientIP != "localhost" {
+                showConnectionNotification(clientIP: clientIP)
+            }
+            return
+
         default:
             break
         }
@@ -447,6 +456,17 @@ class ConnectionManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "clipboardSyncEnabled") }
     }
 
+    var connectionNotificationsEnabled: Bool {
+        get {
+            // Default to true
+            if UserDefaults.standard.object(forKey: "connectionNotificationsEnabled") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "connectionNotificationsEnabled")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "connectionNotificationsEnabled") }
+    }
+
     func sendClipboard(_ content: String) {
         guard clipboardSyncEnabled else { return }
         sendMessage(["type": "clipboard-set", "content": content])
@@ -460,6 +480,37 @@ class ConnectionManager: ObservableObject {
         guard clipboardSyncEnabled, isConnected, isAuthenticated else { return }
         if let content = UIPasteboard.general.string, !content.isEmpty {
             sendClipboard(content)
+        }
+    }
+
+    // MARK: - Notifications
+
+    func requestNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error = error {
+                print("Notification permission error: \(error)")
+            }
+        }
+    }
+
+    private func showConnectionNotification(clientIP: String) {
+        guard connectionNotificationsEnabled else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Client Connected"
+        content.body = "\(clientIP) connected to your Mac"
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Notification error: \(error)")
+            }
         }
     }
 }

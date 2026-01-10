@@ -43,6 +43,18 @@ struct SettingsView: View {
                     Text("Terminal")
                 }
 
+                // Notifications Section
+                Section {
+                    Toggle("Connection Alerts", isOn: Binding(
+                        get: { connectionManager.connectionNotificationsEnabled },
+                        set: { connectionManager.connectionNotificationsEnabled = $0 }
+                    ))
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text("Get notified when someone connects to your Mac. Also appears on Apple Watch.")
+                }
+
                 // Connection Info Section
                 Section {
                     if let serverURL = connectionManager.serverURL {

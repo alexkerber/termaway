@@ -25,6 +25,9 @@ struct TermAwayApp: App {
                 .environmentObject(shortcutsManager)
                 .environmentObject(themeManager)
                 .preferredColorScheme(themeManager.appearanceMode.colorScheme)
+                .onAppear {
+                    connectionManager.requestNotificationPermissions()
+                }
         }
     }
 }
