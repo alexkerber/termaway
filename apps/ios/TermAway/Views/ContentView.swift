@@ -544,12 +544,6 @@ struct SessionListSheet: View {
                 Section {
                     ForEach(connectionManager.sessions) { session in
                         SessionRowView(session: session)
-                            .onTapGesture {
-                                if connectionManager.currentSession?.name != session.name {
-                                    connectionManager.attachToSession(session.name)
-                                }
-                                dismiss()
-                            }
                     }
                 } header: {
                     HStack {
@@ -567,6 +561,10 @@ struct SessionListSheet: View {
             if newSessions.isEmpty {
                 dismiss()
             }
+        }
+        .onChange(of: connectionManager.currentSession?.name) { _, _ in
+            // Dismiss when user taps a session
+            dismiss()
         }
         .alert("New Session", isPresented: $showingNewSession) {
             TextField("Session name", text: $newSessionName)
@@ -698,28 +696,39 @@ struct ConnectView: View {
             // Animated background blobs
             GeometryReader { geo in
                 ZStack {
+                    // Top-left blob
                     Circle()
                         .fill(Color.brandOrange.opacity(colorScheme == .dark ? 0.25 : 0.15))
-                        .frame(width: 250, height: 250)
+                        .frame(width: 300, height: 300)
                         .blur(radius: 80)
-                        .offset(x: animateGradient ? 60 : -60, y: animateGradient ? -40 : 40)
+                        .position(
+                            x: geo.size.width * (animateGradient ? 0.3 : 0.15),
+                            y: geo.size.height * (animateGradient ? 0.25 : 0.15)
+                        )
 
+                    // Bottom-right blob
                     Circle()
                         .fill(Color.brandAmber.opacity(colorScheme == .dark ? 0.2 : 0.12))
-                        .frame(width: 200, height: 200)
+                        .frame(width: 280, height: 280)
                         .blur(radius: 70)
-                        .offset(x: animateGradient ? -70 : 70, y: animateGradient ? 60 : -60)
+                        .position(
+                            x: geo.size.width * (animateGradient ? 0.7 : 0.85),
+                            y: geo.size.height * (animateGradient ? 0.8 : 0.7)
+                        )
 
+                    // Center blob
                     Circle()
                         .fill(Color.brandCream.opacity(colorScheme == .dark ? 0.15 : 0.1))
-                        .frame(width: 220, height: 220)
+                        .frame(width: 250, height: 250)
                         .blur(radius: 75)
-                        .offset(x: animateGradient ? 40 : -40, y: animateGradient ? 100 : -30)
+                        .position(
+                            x: geo.size.width * (animateGradient ? 0.6 : 0.4),
+                            y: geo.size.height * (animateGradient ? 0.5 : 0.6)
+                        )
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
             }
             .onAppear {
-                withAnimation(.easeInOut(duration: 5).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
                     animateGradient = true
                 }
             }
