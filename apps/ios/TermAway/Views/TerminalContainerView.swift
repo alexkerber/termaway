@@ -25,7 +25,7 @@ struct TerminalContainerView: View {
                     themeManager: themeManager,
                     terminalView: $terminalView
                 )
-                .padding(.top, 50)
+                .padding(.top, 44)
                 .padding(.horizontal, 8)
                 .padding(.bottom, shortcutsManager.showToolbar ? geo.safeAreaInsets.bottom + 60 : geo.safeAreaInsets.bottom + 20)
 
@@ -390,9 +390,6 @@ struct TerminalViewRepresentable: UIViewRepresentable {
                     let pending = self.connectionManager.consumePendingScrollback()
                     if !pending.isEmpty {
                         tv.feed(text: pending)
-                        // Give terminal time to render, then trigger resize.
-                        // The resize causes the shell to redraw its prompt correctly
-                        // for this terminal's dimensions (fixes size mismatch from scrollback).
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                             self.scrollToBottom()
                             // Trigger resize to fix prompt rendering

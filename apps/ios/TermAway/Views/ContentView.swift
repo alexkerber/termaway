@@ -259,21 +259,27 @@ struct TerminalDetailView: View {
             if let currentSession = connectionManager.currentSession {
                 TerminalContainerView(session: currentSession)
                     .id(currentSession.name) // Force new view instance per session
-                    .navigationTitle(currentSession.name)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            HStack(spacing: 10) {
-                                ConnectionStatusPill()
+                    .overlay(alignment: .top) {
+                        // Custom top bar - avoids iOS 26 toolbar grouping
+                        HStack {
+                            Text(currentSession.name)
+                                .font(.headline)
+                                .foregroundColor(.primary)
 
-                                GlassCircleButton(
-                                    icon: "gearshape.fill",
-                                    color: iconColor,
-                                    action: { showingSettings = true }
-                                )
-                            }
+                            Spacer()
+
+                            ConnectionStatusPill()
+
+                            GlassCircleButton(
+                                icon: "gearshape.fill",
+                                color: iconColor,
+                                action: { showingSettings = true }
+                            )
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
                     }
+                    .navigationBarHidden(true)
             } else {
                 VStack(spacing: 20) {
                     Image(systemName: "sidebar.left")
