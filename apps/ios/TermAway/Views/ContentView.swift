@@ -35,7 +35,7 @@ struct ContentView: View {
                     NavigationSplitView(columnVisibility: $columnVisibility) {
                         SessionSidebarView()
                     } detail: {
-                        TerminalDetailView()
+                        TerminalDetailView(columnVisibility: $columnVisibility)
                     }
                 } else {
                     NavigationStack {
@@ -48,7 +48,7 @@ struct ContentView: View {
                     NavigationSplitView(columnVisibility: $columnVisibility) {
                         SessionSidebarView()
                     } detail: {
-                        TerminalDetailView()
+                        TerminalDetailView(columnVisibility: $columnVisibility)
                     }
                 } else {
                     NavigationStack {
@@ -127,11 +127,6 @@ struct SessionSidebarView: View {
                 }
             }
         }
-        .overlay {
-            if connectionManager.sessions.isEmpty {
-                NoSessionView(showingNewSession: $showingNewSession)
-            }
-        }
     }
 }
 
@@ -140,6 +135,7 @@ struct SessionRowView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     let session: Session
     @State private var showingRenameAlert = false
+    @State private var showingDeleteConfirmation = false
     @State private var newName = ""
 
     var isActive: Bool {
@@ -189,17 +185,18 @@ struct SessionRowView: View {
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                connectionManager.killSession(session.name)
+            Button {
+                showingDeleteConfirmation = true
             } label: {
-                Label("Delete", systemImage: "trash")
+                Image(systemName: "trash.fill")
             }
+            .tint(.red)
 
             Button {
                 newName = session.name
                 showingRenameAlert = true
             } label: {
-                Label("Rename", systemImage: "pencil")
+                Image(systemName: "pencil.line")
             }
             .tint(.brandOrange)
         }
@@ -221,7 +218,7 @@ struct SessionRowView: View {
             }
 
             Button(role: .destructive, action: {
-                connectionManager.killSession(session.name)
+                showingDeleteConfirmation = true
             }) {
                 Label("Delete", systemImage: "trash")
             }
@@ -238,6 +235,14 @@ struct SessionRowView: View {
                 newName = ""
             }
         }
+        .alert("Delete Session?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                connectionManager.killSession(session.name)
+            }
+        } message: {
+            Text("This will terminate \"\(session.name)\" and cannot be undone.")
+        }
     }
 }
 
@@ -245,11 +250,25 @@ struct SessionRowView: View {
 struct TerminalDetailView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
+    @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var showingSettings = false
+    @State private var showingNewSession = false
+    @State private var showingSessionList = false
+    @State private var newSessionName = ""
 
     // Icon color adapts to terminal background
     private var iconColor: Color {
         themeManager.terminalOverlayColor
+    }
+
+    // Dynamic sheet height based on session count
+    private var sessionSheetDetents: Set<PresentationDetent> {
+        let count = connectionManager.sessions.count
+        let baseHeight: CGFloat = 150
+        let rowHeight: CGFloat = 80
+        let calculatedHeight = baseHeight + (CGFloat(count) * rowHeight)
+        let maxHeight: CGFloat = 650
+        return [.height(min(calculatedHeight, maxHeight)), .large]
     }
 
     var body: some View {
@@ -259,52 +278,89 @@ struct TerminalDetailView: View {
             if let currentSession = connectionManager.currentSession {
                 TerminalContainerView(session: currentSession)
                     .id(currentSession.name) // Force new view instance per session
-                    .overlay(alignment: .top) {
-                        // Custom top bar - avoids iOS 26 toolbar grouping
-                        HStack {
+                    .navigationBarHidden(true)
+
+                // Custom top bar overlay (same as iPhone) - only when session active
+                VStack {
+                    HStack(spacing: 10) {
+                        // + button in glass circle (new session)
+                        GlassCircleButton(
+                            icon: "plus",
+                            color: iconColor,
+                            action: { showingNewSession = true }
+                        )
+
+                        // Session name (tappable to show session list)
+                        Button(action: { showingSessionList = true }) {
                             Text(currentSession.name)
                                 .font(.headline)
-                                .foregroundColor(.primary)
-
-                            Spacer()
-
-                            ConnectionStatusPill()
-
-                            GlassCircleButton(
-                                icon: "gearshape.fill",
-                                color: iconColor,
-                                action: { showingSettings = true }
-                            )
+                                .foregroundColor(iconColor)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: 150, alignment: .leading)
+
+                        Spacer()
+
+                        // Connected status pill (tappable to show sessions)
+                        ConnectionStatusPill(action: { showingSessionList = true })
+
+                        // Gear icon in glass circle (settings)
+                        GlassCircleButton(
+                            icon: "gearshape.fill",
+                            color: iconColor,
+                            action: { showingSettings = true }
+                        )
                     }
-                    .navigationBarHidden(true)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                    Spacer()
+                }
+            } else if connectionManager.sessions.isEmpty {
+                NoSessionView(showingNewSession: $showingNewSession)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: { showingSettings = true }) {
+                                Image(systemName: "gearshape.fill")
+                            }
+                        }
+                    }
             } else {
-                VStack(spacing: 20) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.linearGradient(
-                            colors: [.brandAmber, .brandOrange],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-
-                    Text("Select a Session")
-                        .font(.title2.weight(.semibold))
-                        .foregroundColor(.white)
-
-                    Text("Choose a session from the sidebar")
-                        .foregroundColor(.secondary)
-
-                    // Settings button when no session
-                    GlassSettingsButton(action: { showingSettings = true })
-                        .padding(.top, 16)
+                // Auto-select first session
+                Color.clear.onAppear {
+                    if let first = connectionManager.sessions.first {
+                        connectionManager.attachToSession(first.name)
+                    }
                 }
             }
         }
+        .sheet(isPresented: $showingSessionList) {
+            SessionListSheet()
+                .presentationDetents(sessionSheetDetents)
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
+        }
+        .alert("New Session", isPresented: $showingNewSession) {
+            TextField("Session name", text: $newSessionName)
+            Button("Cancel", role: .cancel) {
+                newSessionName = ""
+            }
+            Button("Create") {
+                if !newSessionName.isEmpty {
+                    connectionManager.createSession(newSessionName)
+                    connectionManager.attachToSession(newSessionName)
+                    newSessionName = ""
+                }
+            }
+        }
+        .onChange(of: connectionManager.sessions) { _, newSessions in
+            if connectionManager.currentSession == nil, let first = newSessions.first {
+                connectionManager.attachToSession(first.name)
+            }
         }
         .hideToolbarBackground()
         .preferredColorScheme(.dark) // Terminal always dark
@@ -348,8 +404,59 @@ struct SessionCompactView: View {
             if let currentSession = connectionManager.currentSession {
                 TerminalContainerView(session: currentSession)
                     .id(currentSession.name) // Force new view instance per session
+
+                // Custom top bar overlay (only when session active)
+                VStack {
+                    HStack(spacing: 10) {
+                        // + button in glass circle (new session)
+                        GlassCircleButton(
+                            icon: "plus",
+                            color: iconColor,
+                            action: { showingNewSession = true }
+                        )
+
+                        // Session name (tappable to show session list)
+                        Button(action: { showingSessionList = true }) {
+                            Text(currentSession.name)
+                                .font(.headline)
+                                .foregroundColor(iconColor)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: 150, alignment: .leading)
+
+                        Spacer()
+
+                        // Connected status pill (tappable to show sessions)
+                        ConnectionStatusPill(action: { showingSessionList = true })
+
+                        // Gear icon in glass circle (settings)
+                        GlassCircleButton(
+                            icon: "gearshape.fill",
+                            color: iconColor,
+                            action: { showingSettings = true }
+                        )
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                    Spacer()
+                }
             } else if connectionManager.sessions.isEmpty {
                 NoSessionView(showingNewSession: $showingNewSession)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .topTrailing) {
+                        // Settings button for iPhone - using GlassCircleButton
+                        GlassCircleButton(
+                            icon: "gearshape.fill",
+                            size: 44,
+                            color: iconColor,
+                            action: { showingSettings = true }
+                        )
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.top, 8)
             } else {
                 // Auto-select first session
                 Color.clear.onAppear {
@@ -357,45 +464,6 @@ struct SessionCompactView: View {
                         connectionManager.attachToSession(first.name)
                     }
                 }
-            }
-
-            // Custom top bar overlay: + Session Name | .... | Connected | Gear
-            VStack {
-                HStack(spacing: 10) {
-                    // + button in glass circle (new session)
-                    GlassCircleButton(
-                        icon: "plus",
-                        color: iconColor,
-                        action: { showingNewSession = true }
-                    )
-
-                    // Session name (tappable to show session list)
-                    Button(action: { showingSessionList = true }) {
-                        Text(connectionManager.currentSession?.name ?? "Add session")
-                            .font(.headline)
-                            .foregroundColor(iconColor)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: 150, alignment: .leading)
-
-                    Spacer()
-
-                    // Connected status pill (tappable to show sessions)
-                    ConnectionStatusPill(action: { showingSessionList = true })
-
-                    // Gear icon in glass circle (settings)
-                    GlassCircleButton(
-                        icon: "gearshape.fill",
-                        color: iconColor,
-                        action: { showingSettings = true }
-                    )
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
-                Spacer()
             }
         }
         .navigationBarHidden(true)
@@ -494,6 +562,12 @@ struct SessionListSheet: View {
             }
             .listStyle(.insetGrouped)
         }
+        .onChange(of: connectionManager.sessions) { _, newSessions in
+            // Auto-dismiss when no sessions left
+            if newSessions.isEmpty {
+                dismiss()
+            }
+        }
         .alert("New Session", isPresented: $showingNewSession) {
             TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
@@ -510,46 +584,71 @@ struct SessionListSheet: View {
     }
 }
 
+// MARK: - Setup Step Row
+struct SetupStepRow: View {
+    let number: Int
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text("\(number)")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 26, height: 26)
+                .background(Color.brandAmber)
+                .clipShape(Circle())
+
+            Text(text)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
 // MARK: - No Session View
 struct NoSessionView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
+    @EnvironmentObject var themeManager: ThemeManager
     @Binding var showingNewSession: Bool
-    @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
-        VStack(spacing: 28) {
-            // Icon with glow
-            ZStack {
-                Image("LogoIcon")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 90, height: 90)
-                    .blur(radius: 25)
-                    .opacity(0.5)
-                    .scaleEffect(pulseScale)
+        VStack {
+            Spacer()
+            welcomeContent
+            Spacer()
+            bottomContent
+        }
+    }
 
-                Image("LogoIcon")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .onAppear {
-                withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
-                    pulseScale = 1.08
-                }
-            }
+    private var welcomeContent: some View {
+        VStack(spacing: 24) {
+            // App icon
+            Image("LogoIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: .brandOrange.opacity(0.3), radius: 20, y: 8)
 
             VStack(spacing: 8) {
-                Text("No Active Session")
-                    .font(.title2.weight(.semibold))
+                Text("TermAway")
+                    .font(.system(size: 32, weight: .bold))
                     .foregroundColor(.primary)
 
-                Text("Create a new session to get started")
-                    .font(.subheadline)
+                Text("Your Mac terminal — on your \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")")
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.secondary)
             }
 
+            // Setup steps
+            VStack(alignment: .leading, spacing: 16) {
+                SetupStepRow(number: 1, text: "Create a new session")
+                SetupStepRow(number: 2, text: "Start typing commands")
+                SetupStepRow(number: 3, text: "Access from any device")
+            }
+            .padding(.top, 16)
+
+            // Create Session button
             Button(action: { showingNewSession = true }) {
                 HStack(spacing: 10) {
                     Image(systemName: "plus")
@@ -564,19 +663,21 @@ struct NoSessionView: View {
                 .clipShape(Capsule())
                 .shadow(color: .brandOrange.opacity(0.4), radius: 12, y: 6)
             }
-
-            // Disconnect option
-            Button(action: { connectionManager.disconnect() }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "xmark.circle")
-                        .font(.subheadline)
-                    Text("Disconnect")
-                        .font(.subheadline.weight(.medium))
-                }
-                .foregroundColor(.secondary)
-            }
             .padding(.top, 8)
         }
+    }
+
+    private var bottomContent: some View {
+        Button(action: { connectionManager.disconnect() }) {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle")
+                    .font(.subheadline)
+                Text("Disconnect")
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundColor(.secondary)
+        }
+        .padding(.bottom, 30)
     }
 }
 
@@ -656,7 +757,7 @@ struct ConnectView: View {
                         .font(.system(size: 36, weight: .bold))
                         .foregroundColor(.primary)
 
-                    Text("Your terminal — on your \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")")
+                    Text("Your Mac terminal — on your \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.secondary)
                 }
@@ -724,7 +825,13 @@ struct ConnectView: View {
 
                 // Settings button at bottom
                 GlassSettingsButton(action: { showingServerSheet = true })
-                    .padding(.bottom, 40)
+
+                // Version number
+                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .padding(.top, 12)
+                    .padding(.bottom, 30)
             }
         }
     }

@@ -9,17 +9,29 @@ struct TerminalContainerView: View {
     let session: Session
     @State private var terminalView: TerminalView?
     @State private var showScrollButton = false
+    @State private var keyboardHeight: CGFloat = 0
     @Namespace private var scrollButtonNamespace
 
     private var iconColor: SwiftUI.Color {
         themeManager.terminalOverlayColor
     }
 
+    /// Calculate bottom padding based on keyboard and toolbar state
+    private func bottomPadding(safeArea: CGFloat) -> CGFloat {
+        if keyboardHeight > 0 {
+            // Keyboard visible: add space for keyboard + toolbar (toolbar sits above keyboard)
+            return keyboardHeight + (shortcutsManager.showToolbar ? 60 : 20)
+        } else {
+            // No keyboard: normal padding
+            return safeArea + (shortcutsManager.showToolbar ? 60 : 20)
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 // Terminal with top padding for app bar
-                // Bottom padding: if toolbar visible, add space for it; otherwise just safe area
+                // Bottom padding adjusts for keyboard when visible
                 TerminalViewRepresentable(
                     connectionManager: connectionManager,
                     themeManager: themeManager,
@@ -27,7 +39,7 @@ struct TerminalContainerView: View {
                 )
                 .padding(.top, 44)
                 .padding(.horizontal, 8)
-                .padding(.bottom, shortcutsManager.showToolbar ? geo.safeAreaInsets.bottom + 60 : geo.safeAreaInsets.bottom + 20)
+                .padding(.bottom, bottomPadding(safeArea: geo.safeAreaInsets.bottom))
 
                 // Toolbar at bottom (only if enabled)
                 if terminalView != nil && shortcutsManager.showToolbar {
@@ -37,8 +49,8 @@ struct TerminalContainerView: View {
                     )
                 }
 
-                // Scroll to bottom button - only show when scrolled up
-                if terminalView != nil && showScrollButton {
+                // Scroll to bottom button - only show when scrolled up and keyboard not visible
+                if terminalView != nil && showScrollButton && keyboardHeight == 0 {
                     VStack {
                         Spacer()
                         HStack {
@@ -52,10 +64,19 @@ struct TerminalContainerView: View {
                 }
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showScrollButton)
+            .animation(.easeInOut(duration: 0.25), value: keyboardHeight)
         }
         .ignoresSafeArea(edges: .bottom)
         .onReceive(Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()) { _ in
             updateScrollState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                keyboardHeight = frame.height
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardHeight = 0
         }
     }
 
@@ -157,11 +178,21 @@ struct ShortcutsToolbarView: View {
 
     @ViewBuilder
     private var toolbarLayout: some View {
-        // Simple layout: shortcuts pill always visible
+        // Layout: shortcuts pill with optional keyboard button at the end
         HStack(alignment: .center, spacing: 8) {
             shortcutsPill(fullWidth: true)
         }
         .padding(.horizontal, 16)
+    }
+
+    private func toggleKeyboard() {
+        if isKeyboardVisible {
+            // Dismiss keyboard
+            terminalView?.resignFirstResponder()
+        } else {
+            // Show keyboard
+            terminalView?.becomeFirstResponder()
+        }
     }
 
     @ViewBuilder
@@ -190,6 +221,28 @@ struct ShortcutsToolbarView: View {
                     ) {
                         handleShortcut(shortcut)
                     }
+                }
+
+                // Keyboard button at the end (optional)
+                if shortcutsManager.showKeyboardButton {
+                    // Divider
+                    Rectangle()
+                        .fill(iconColor.opacity(0.3))
+                        .frame(width: 1, height: 20)
+                        .padding(.horizontal, 8)
+
+                    // Keyboard toggle
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        toggleKeyboard()
+                    }) {
+                        Image(systemName: isKeyboardVisible ? "keyboard.chevron.compact.down" : "keyboard")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(iconColor.opacity(0.85))
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(ShortcutKeyButtonStyle())
                 }
             }
             .padding(.horizontal, 20)
@@ -411,12 +464,29 @@ struct TerminalViewRepresentable: UIViewRepresentable {
             Task { @MainActor in
                 connectionManager.onTerminalOutput = { [weak self] data in
                     self?.terminalView?.feed(text: data)
-                    // Auto-scroll to show new content
+                    // Only auto-scroll if user is already near the bottom
+                    // This prevents jumping when user has scrolled up to read
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        self?.scrollToBottom()
+                        self?.scrollToBottomIfNeeded()
                     }
                 }
             }
+        }
+
+        /// Check if user is near the bottom of the terminal
+        private func isNearBottom() -> Bool {
+            guard let tv = terminalView else { return true }
+            let contentHeight = tv.contentSize.height
+            let frameHeight = tv.bounds.height
+            let offsetY = tv.contentOffset.y
+            let maxOffset = max(0, contentHeight - frameHeight)
+            // Consider "near bottom" if within 100 points
+            return offsetY >= maxOffset - 100
+        }
+
+        private func scrollToBottomIfNeeded() {
+            guard isNearBottom() else { return }
+            scrollToBottom()
         }
 
         private func scrollToBottom() {

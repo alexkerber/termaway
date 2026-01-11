@@ -42,6 +42,13 @@ struct SettingsView: View {
                     }
 
                     if shortcutsManager.showToolbar {
+                        Toggle(isOn: Binding(
+                            get: { shortcutsManager.showKeyboardButton },
+                            set: { shortcutsManager.showKeyboardButton = $0 }
+                        )) {
+                            Label("Keyboard Button", systemImage: "keyboard.badge.ellipsis")
+                        }
+
                         NavigationLink {
                             ShortcutsSettingsView()
                         } label: {
@@ -50,6 +57,10 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Terminal")
+                } footer: {
+                    if shortcutsManager.showToolbar && !shortcutsManager.showKeyboardButton {
+                        Text("Keyboard button hidden. Turn on if you need the on-screen keyboard.")
+                    }
                 }
 
                 // Notifications Section
@@ -112,6 +123,20 @@ struct SettingsView: View {
                             }
                         }
                     }
+                }
+
+                // About Section
+                Section {
+                    VStack(spacing: 4) {
+                        Text("TermAway v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                            .font(.footnote)
+                            .fontWeight(.medium)
+
+                        Link("Created by Alex Kerber", destination: URL(string: "https://alexkerber.com")!)
+                            .font(.footnote)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
                 }
             }
             .navigationTitle("Settings")

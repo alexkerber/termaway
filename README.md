@@ -1,6 +1,6 @@
 # TermAway
 
-Your Mac terminal, on your iPad. A self-hosted web-based terminal that provides access to your machine's terminal sessions from any browser on your LAN. Perfect for remote coding from bed, couch, or anywhere in your home.
+Your Mac terminal, on your iPad or iPhone. A self-hosted web-based terminal that provides access to your machine's terminal sessions from any browser on your LAN. Perfect for remote coding from bed, couch, or anywhere in your home.
 
 ## Features
 
@@ -25,23 +25,24 @@ node server/index.js
 Then open http://localhost:3000 in your browser.
 
 For LAN access, use your machine's IP address or hostname:
+
 - http://192.168.x.x:3000
 - http://your-machine.local:3000
 
 ## Apps
 
-- **macOS**: Menu bar app that runs the terminal server (`macos-app/`)
-- **iOS/iPadOS**: Native SwiftTerm client (`ios-app/`)
-- **Web**: Browser-based client at http://localhost:3000
+- **macOS**: Menu bar app that runs the terminal server (`apps/macos/`)
+- **iOS/iPadOS**: Native SwiftTerm client with liquid glass UI (`apps/ios/`)
+- **Web**: Browser-based client at http://localhost:3000 (`apps/web/`)
 
 ## Configuration
 
 Environment variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | 3000 | HTTP server port |
-| `HOST` | 0.0.0.0 | Bind address (0.0.0.0 for all interfaces) |
+| Variable | Default | Description                               |
+| -------- | ------- | ----------------------------------------- |
+| `PORT`   | 3000    | HTTP server port                          |
+| `HOST`   | 0.0.0.0 | Bind address (0.0.0.0 for all interfaces) |
 
 ## Usage
 
@@ -60,31 +61,36 @@ Environment variables:
 ### Keyboard Shortcuts
 
 Terminal shortcuts work as expected:
+
 - `Ctrl+C` - Interrupt
 - `Ctrl+D` - EOF
 - `Ctrl+Z` - Suspend
 - `Tab` - Completion
 
 Copy/Paste:
+
 - `Ctrl+Shift+C` / `Ctrl+Shift+V` (Linux)
 - `Cmd+C` / `Cmd+V` (Mac)
 
 ## Architecture
 
 ```
+├── apps/
+│   ├── ios/                  # Native iOS/iPadOS client (SwiftUI + SwiftTerm)
+│   ├── macos/                # Menu bar server app (AppKit)
+│   └── web/                  # Web terminal client (xterm.js)
 ├── server/
 │   ├── index.js              # Express + WebSocket server
 │   └── sessionManager.js     # PTY session lifecycle
-├── ios-app/                  # Native iOS/iPadOS client
-├── macos-app/                # Menu bar server app
-├── website/                  # Marketing website
-├── package.json
-└── README.md
+├── website/                  # Marketing website (termaway.app)
+├── docs/                     # Feature plans and documentation
+└── builds/                   # Build outputs (.app, .zip)
 ```
 
 ### WebSocket Protocol
 
 Client → Server:
+
 - `{ type: "create", name: "session-name" }` - Create new session
 - `{ type: "attach", name: "session-name" }` - Attach to session
 - `{ type: "input", data: "..." }` - Terminal input
@@ -93,6 +99,7 @@ Client → Server:
 - `{ type: "list" }` - List all sessions
 
 Server → Client:
+
 - `{ type: "output", data: "..." }` - Terminal output
 - `{ type: "sessions", list: [...] }` - Session list
 - `{ type: "attached", name: "..." }` - Confirm attachment
@@ -110,6 +117,7 @@ Server → Client:
 ## Security Notes
 
 This is designed for LAN-only access without authentication. For external access:
+
 - Add authentication
 - Enable HTTPS
 - Consider using a VPN
@@ -117,15 +125,18 @@ This is designed for LAN-only access without authentication. For external access
 ## Troubleshooting
 
 ### Terminal not displaying correctly
+
 - Ensure your browser supports WebGL
 - Try refreshing the page
 
 ### Session not reconnecting
+
 - Check server is still running
 - Check network connectivity
 - Sessions are lost if server restarts
 
 ### Colors not working
+
 - Your shell should detect TERM=xterm-256color
 - Make sure your .zshrc/.bashrc doesn't override TERM
 

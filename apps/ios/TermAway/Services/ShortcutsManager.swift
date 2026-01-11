@@ -23,6 +23,21 @@ class ShortcutsManager: ObservableObject {
         }
     }
 
+    // Keyboard button visibility setting (hide when using external keyboard)
+    var showKeyboardButton: Bool {
+        get {
+            // Default to true if not set
+            if UserDefaults.standard.object(forKey: "showKeyboardButton") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "showKeyboardButton")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "showKeyboardButton")
+            objectWillChange.send()
+        }
+    }
+
     init() {
         loadShortcuts()
     }

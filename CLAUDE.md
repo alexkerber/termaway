@@ -86,6 +86,38 @@ Server → Client:
 - `clipboard-update` / `clipboard-content` - clipboard sync
 - `error` - error messages
 
+## iOS Development
+
+### Build Commands
+
+```bash
+# Build for iPhone simulator
+xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' build
+
+# Build for iPad simulator
+xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
+  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4),OS=18.6' build
+```
+
+### Reusable Components
+
+**Always check for existing components before creating new ones:**
+
+- `GlassCircleButton` - Circle button with liquid glass effect (iOS 26) or ultraThinMaterial fallback. Use for floating action buttons, icon buttons in overlays. Has built-in haptic feedback.
+- `GlassPillButton` - Pill-shaped glass button for status indicators
+- `ConnectionStatusPill` - Shows connected/disconnected status
+
+Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
+
+### SwiftUI Patterns
+
+- **Swipe Actions**: Use `.swipeActions` with `Image(systemName:)` only (no Label) for icon-only buttons. Shape is system-controlled.
+- **Delete Confirmation**: Always show confirmation alert before destructive actions
+- **iPad vs iPhone**: Check `UIDevice.current.userInterfaceIdiom == .pad` for device-specific layouts
+- **Toolbar on iPad**: Use `.toolbar` with `.topBarTrailing` placement - aligns with NavigationSplitView sidebar toggle
+- **Safe Area**: iPhone overlays should respect safe area (Dynamic Island). iPad can ignore top safe area to align with system nav bar.
+
 ## Releasing
 
 When creating a new release:

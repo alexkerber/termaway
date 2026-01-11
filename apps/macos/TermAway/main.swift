@@ -6,7 +6,7 @@ import UserNotifications
 import Combine
 
 // MARK: - Version
-let appVersion = "1.1.0"
+let appVersion = "1.1.2"
 
 // MARK: - Display Mode
 enum DisplayMode: String, CaseIterable {
@@ -919,16 +919,8 @@ struct PreferencesView: View {
                         .font(.caption)
                         .fontWeight(.medium)
 
-                    Text("Created by Alex Kerber")
+                    Link("Created by Alex Kerber", destination: URL(string: "https://alexkerber.com")!)
                         .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Link("alexkerber.com", destination: URL(string: "https://alexkerber.com")!)
-                        .font(.caption)
-
-                    Text("© 2026 All rights reserved")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 8)
