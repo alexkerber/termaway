@@ -85,3 +85,28 @@ Server → Client:
 - `client-connected` / `client-disconnected` - connection notifications
 - `clipboard-update` / `clipboard-content` - clipboard sync
 - `error` - error messages
+
+## Releasing
+
+When creating a new release:
+
+1. **Version locations to update:**
+   - `apps/macos/TermAway/Info.plist` - CFBundleShortVersionString and CFBundleVersion
+   - `website/index.html` - APP_VERSION constant at top of file
+
+2. **Asset naming convention (IMPORTANT):**
+   - macOS zip: `TermAway-macOS-v{version}.zip` (e.g., `TermAway-macOS-v1.1.2.zip`)
+   - Save to: `builds/TermAway-macOS-v{version}.zip`
+
+3. **Release commands:**
+
+   ```bash
+   # Build macOS app
+   cd apps/macos && xcodebuild -scheme TermAway -configuration Release archive
+
+   # Create zip with correct name
+   zip -r builds/TermAway-macOS-v{version}.zip TermAway.app
+
+   # Create GitHub release
+   gh release create v{version} builds/TermAway-macOS-v{version}.zip
+   ```
