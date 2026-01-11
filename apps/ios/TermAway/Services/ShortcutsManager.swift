@@ -8,6 +8,21 @@ class ShortcutsManager: ObservableObject {
 
     private let shortcutsKey = "savedShortcuts"
 
+    // Toolbar visibility setting
+    var showToolbar: Bool {
+        get {
+            // Default to true if not set
+            if UserDefaults.standard.object(forKey: "showShortcutsToolbar") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "showShortcutsToolbar")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "showShortcutsToolbar")
+            objectWillChange.send()
+        }
+    }
+
     init() {
         loadShortcuts()
     }

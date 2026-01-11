@@ -51,6 +51,7 @@ const modalInput = document.getElementById("modal-input");
 const modalCancel = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
 const contextMenu = document.getElementById("context-menu");
+const scrollToBottomBtn = document.getElementById("scroll-to-bottom");
 
 // Theme definitions
 const darkTheme = {
@@ -177,6 +178,80 @@ function initTerminal() {
       }
     }
   });
+
+  // Scroll to bottom button click handler
+  if (scrollToBottomBtn) {
+    scrollToBottomBtn.onclick = () => {
+      if (term) {
+        smoothScrollToBottom();
+        scrollToBottomBtn.classList.add("scroll-hidden");
+      }
+    };
+  }
+
+  // Track scroll via viewport element
+  setTimeout(() => {
+    const viewport = term.element?.querySelector(".xterm-viewport");
+    if (viewport) {
+      viewport.addEventListener("scroll", updateScrollButton);
+      updateScrollButton(); // Initial check
+    }
+  }, 100);
+}
+
+// Smooth scroll to bottom of terminal
+function smoothScrollToBottom() {
+  if (!term) return;
+  const viewport = term.element?.querySelector(".xterm-viewport");
+  if (!viewport) return;
+
+  const targetScroll = viewport.scrollHeight - viewport.clientHeight;
+  const startScroll = viewport.scrollTop;
+  const distance = targetScroll - startScroll;
+
+  if (distance <= 0) return;
+
+  const duration = Math.min(400, Math.max(150, distance * 0.5)); // 150-400ms based on distance
+  const startTime = performance.now();
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function animate(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = easeOutCubic(progress);
+
+    viewport.scrollTop = startScroll + distance * eased;
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Update scroll button visibility based on scroll position
+function updateScrollButton() {
+  if (!term || !scrollToBottomBtn) return;
+
+  const viewport = term.element?.querySelector(".xterm-viewport");
+  if (!viewport) return;
+
+  const scrollTop = viewport.scrollTop;
+  const scrollHeight = viewport.scrollHeight;
+  const clientHeight = viewport.clientHeight;
+
+  // At bottom if within 50px of the end
+  const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50;
+
+  if (isAtBottom) {
+    scrollToBottomBtn.classList.add("scroll-hidden");
+  } else {
+    scrollToBottomBtn.classList.remove("scroll-hidden");
+  }
 }
 
 // WebSocket connection management
@@ -269,7 +344,11 @@ function updateConnectionStatus(status) {
       break;
     case "connected":
       statusText.textContent = "Connected";
-      if (disconnectBtn) disconnectBtn.style.display = "inline-block";
+      if (disconnectBtn) {
+        disconnectBtn.style.display = "inline-flex";
+        // Re-init Lucide for newly visible button
+        if (window.lucide) lucide.createIcons({ nodes: [disconnectBtn] });
+      }
       break;
     case "disconnected":
       statusText.textContent = "Disconnected";
@@ -321,6 +400,8 @@ function handleMessage(msg) {
     case "output":
       if (term) {
         term.write(msg.data);
+        // Scroll to bottom after write renders
+        requestAnimationFrame(() => term.scrollToBottom());
       }
       break;
 
@@ -383,8 +464,16 @@ function handleMessage(msg) {
 
     case "error":
       console.error("Server error:", msg.message);
-      // Show error in terminal if attached
-      if (term && currentSession) {
+      // Handle "session not found" gracefully - just clear and show no session view
+      if (msg.message && msg.message.includes("not found")) {
+        currentSession = null;
+        localStorage.removeItem("currentSession");
+        if (term) {
+          term.clear();
+        }
+        updateView();
+      } else if (term && currentSession) {
+        // Show other errors in terminal
         term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
       }
       break;
@@ -398,6 +487,11 @@ function onAuthenticated() {
 
   // If we had a session, try to reattach
   if (currentSession) {
+    // Clear terminal before reattaching to avoid mixing old content with new scrollback
+    if (term) {
+      term.clear();
+      term.reset();
+    }
     ws.send(JSON.stringify({ type: "attach", name: currentSession }));
   }
 }

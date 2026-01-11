@@ -68,14 +68,6 @@ const wss = new WebSocketServer({ server });
 // Initialize session manager
 const sessionManager = new SessionManager();
 
-// Restore any existing tmux sessions from previous server run
-const restoredSessions = sessionManager.restoreExistingSessions();
-if (restoredSessions.length > 0) {
-  console.log(
-    `Restored ${restoredSessions.length} tmux session(s): ${restoredSessions.join(", ")}`,
-  );
-}
-
 // Heartbeat to detect stale connections
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const wsAliveMap = new WeakMap();
@@ -411,9 +403,11 @@ function handleCreate(ws, name) {
 }
 
 /**
- * Attach to an existing session
+ * Attach to an existing session.
+ * Waits for all scrollback to be sent before confirming attachment.
+ * This ensures the client receives all history before updating its UI.
  */
-function handleAttach(ws, name) {
+async function handleAttach(ws, name) {
   if (!name || typeof name !== "string") {
     ws.send(
       JSON.stringify({ type: "error", message: "Session name is required" }),
@@ -434,8 +428,14 @@ function handleAttach(ws, name) {
     sessionManager.detach(currentSession, ws);
   }
 
-  sessionManager.attach(name, ws);
+  const session = sessionManager.attach(name, ws);
   wsSessionMap.set(ws, name);
+
+  // Wait for all scrollback chunks to be sent before confirming
+  // This prevents the client from creating its terminal too early
+  if (session.scrollbackPromise) {
+    await session.scrollbackPromise;
+  }
 
   ws.send(JSON.stringify({ type: "attached", name }));
 }
@@ -474,7 +474,7 @@ function handleResize(ws, cols, rows) {
     return;
   }
 
-  sessionManager.resize(sessionName, cols, rows);
+  sessionManager.resize(sessionName, cols, rows, ws);
 }
 
 /**
@@ -720,26 +720,20 @@ process.on("SIGINT", () => {
   }
   bonjour.destroy();
 
-  // Detach PTYs but preserve tmux sessions for persistence
-  // Only kill non-tmux sessions
+  // Kill all sessions
   for (const name of sessionManager.list()) {
     try {
-      const info = sessionManager.info(name);
-      if (info && !info.isTmux) {
-        sessionManager.kill(name);
-      }
-    } catch (e) {
+      sessionManager.kill(name);
+    } catch {
       // Ignore errors during shutdown
     }
   }
-  // Detach all PTYs (tmux sessions will persist)
-  sessionManager.detachAllPtys();
 
   // Close WebSocket server
   wss.close(() => {
     // Close HTTP server
     server.close(() => {
-      console.log("Server stopped (tmux sessions preserved)");
+      console.log("Server stopped");
       process.exit(0);
     });
   });

@@ -1,35 +1,6 @@
 import SwiftUI
 import SwiftTerm
-
-// MARK: - iOS 26 Glass Effect Extension
-extension View {
-    @ViewBuilder
-    func withGlassEffect() -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect()
-        } else {
-            self.background(.ultraThinMaterial)
-        }
-    }
-
-    @ViewBuilder
-    func withGlassEffect(in shape: some Shape) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect()
-        } else {
-            self.background(.ultraThinMaterial, in: shape)
-        }
-    }
-
-    @ViewBuilder
-    func if_iOS26GlassEffect() -> some View {
-        if #available(iOS 26.0, *) {
-            self.background(.clear).glassEffect().clipShape(Capsule())
-        } else {
-            self
-        }
-    }
-}
+import UIKit
 
 struct TerminalContainerView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
@@ -37,11 +8,18 @@ struct TerminalContainerView: View {
     @EnvironmentObject var themeManager: ThemeManager
     let session: Session
     @State private var terminalView: TerminalView?
+    @State private var showScrollButton = false
+    @Namespace private var scrollButtonNamespace
+
+    private var iconColor: SwiftUI.Color {
+        themeManager.terminalOverlayColor
+    }
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                // Terminal with top padding for the app bar, bottom for safe area
+                // Terminal with top padding for app bar
+                // Bottom padding: if toolbar visible, add space for it; otherwise just safe area
                 TerminalViewRepresentable(
                     connectionManager: connectionManager,
                     themeManager: themeManager,
@@ -49,23 +27,69 @@ struct TerminalContainerView: View {
                 )
                 .padding(.top, 50)
                 .padding(.horizontal, 8)
-                .padding(.bottom, geo.safeAreaInsets.bottom)
+                .padding(.bottom, shortcutsManager.showToolbar ? geo.safeAreaInsets.bottom + 60 : geo.safeAreaInsets.bottom + 20)
 
-                // Floating toolbar - handles its own keyboard positioning
-                if terminalView != nil {
+                // Toolbar at bottom (only if enabled)
+                if terminalView != nil && shortcutsManager.showToolbar {
                     ShortcutsToolbarView(
                         terminalView: $terminalView,
                         bottomSafeArea: geo.safeAreaInsets.bottom
                     )
                 }
+
+                // Scroll to bottom button - only show when scrolled up
+                if terminalView != nil && showScrollButton {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            scrollToBottomButton
+                                .padding(.trailing, 16)
+                                .padding(.bottom, shortcutsManager.showToolbar ? geo.safeAreaInsets.bottom + 70 : geo.safeAreaInsets.bottom + 24)
+                        }
+                    }
+                    .transition(.scale(scale: 0, anchor: .center).combined(with: .opacity))
+                }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showScrollButton)
         }
         .ignoresSafeArea(edges: .bottom)
-        .onAppear {
-            // Re-attach to ensure we get the scrollback buffer
-            // This handles the case where auto-attach happened before terminal was ready
-            connectionManager.attachToSession(session.name)
+        .onReceive(Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()) { _ in
+            updateScrollState()
         }
+    }
+
+    @ViewBuilder
+    private var scrollToBottomButton: some View {
+        GlassCircleButton(
+            icon: "arrow.down.to.line",
+            size: 44,
+            color: iconColor,
+            action: { scrollToBottom() }
+        )
+    }
+
+    private func updateScrollState() {
+        guard let terminal = terminalView else { return }
+        let contentHeight = terminal.contentSize.height
+        let frameHeight = terminal.bounds.height
+        let offsetY = terminal.contentOffset.y
+
+        // Has scrollable content and not at bottom
+        let hasScrollableContent = contentHeight > frameHeight + 50
+        let maxOffset = max(0, contentHeight - frameHeight)
+        let isAtBottom = offsetY >= maxOffset - 50
+
+        let shouldShow = hasScrollableContent && !isAtBottom
+        if shouldShow != showScrollButton {
+            showScrollButton = shouldShow
+        }
+    }
+
+    private func scrollToBottom() {
+        guard let terminal = terminalView else { return }
+        let bottomOffset = CGPoint(x: 0, y: max(terminal.contentSize.height - terminal.bounds.height, 0))
+        terminal.setContentOffset(bottomOffset, animated: true)
     }
 }
 
@@ -79,6 +103,7 @@ struct ShortcutsToolbarView: View {
     @State private var isToolbarVisible = true
     @State private var isKeyboardVisible = false
     @State private var keyboardHeight: CGFloat = 0
+    @Namespace private var toolbarNamespace
 
     // Icon color adapts to terminal background
     private var iconColor: SwiftUI.Color {
@@ -86,70 +111,71 @@ struct ShortcutsToolbarView: View {
     }
 
     var body: some View {
+        // Main toolbar at bottom
         VStack {
             Spacer()
-            Group {
-                if isKeyboardVisible {
-                    // Keyboard visible: full width pill, no toggle
-                    shortcutsPill(fullWidth: true)
-                        .padding(.horizontal, 16)
-                } else {
-                    // Keyboard hidden: toggle + pill
-                    HStack(alignment: .center, spacing: 8) {
-                        toggleButton
-
-                        if isToolbarVisible {
-                            shortcutsPill(fullWidth: false)
-                                .transition(.asymmetric(
-                                    insertion: .scale(scale: 0.9, anchor: .leading).combined(with: .opacity),
-                                    removal: .scale(scale: 0.9, anchor: .leading).combined(with: .opacity)
-                                ))
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-            }
-            .padding(.bottom, isKeyboardVisible ? (keyboardHeight + 8) : (bottomSafeArea + 20))
+            toolbarContent
+                .padding(.bottom, isKeyboardVisible ? (keyboardHeight + 8) : (bottomSafeArea + 20))
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isToolbarVisible)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isKeyboardVisible)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
             if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
                 keyboardHeight = keyboardFrame.height
             }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(liquidAnimation) {
                 isKeyboardVisible = true
                 isToolbarVisible = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(liquidAnimation) {
                 isKeyboardVisible = false
                 keyboardHeight = 0
             }
         }
     }
 
+    // iOS 26 bouncy animation, fallback for older versions
+    private var liquidAnimation: Animation {
+        if #available(iOS 26.0, *) {
+            return .smooth(duration: 0.4)
+        } else {
+            return .spring(response: 0.3, dampingFraction: 0.8)
+        }
+    }
+
+    @ViewBuilder
+    private var toolbarContent: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer {
+                toolbarLayout
+            }
+        } else {
+            toolbarLayout
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isToolbarVisible)
+        }
+    }
+
+    @ViewBuilder
+    private var toolbarLayout: some View {
+        // Simple layout: shortcuts pill always visible
+        HStack(alignment: .center, spacing: 8) {
+            shortcutsPill(fullWidth: true)
+        }
+        .padding(.horizontal, 16)
+    }
+
     @ViewBuilder
     private var toggleButton: some View {
-        Button(action: {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                isToolbarVisible.toggle()
+        GlassCircleButton(
+            icon: isToolbarVisible ? "chevron.down" : "chevron.up",
+            size: 40,
+            color: iconColor,
+            action: {
+                withAnimation(liquidAnimation) {
+                    isToolbarVisible.toggle()
+                }
             }
-        }) {
-            Image(systemName: isToolbarVisible ? "chevron.down" : "chevron.up")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(iconColor.opacity(0.85))
-                .frame(width: 40, height: 40)
-        }
-        .background {
-            if #available(iOS 26.0, *) {
-                Circle().fill(.clear).glassEffect()
-            } else {
-                Circle().fill(iconColor.opacity(0.15))
-            }
-        }
+        )
     }
 
     @ViewBuilder
@@ -166,17 +192,34 @@ struct ShortcutsToolbarView: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 20)
             .padding(.vertical, 6)
         }
         .frame(maxWidth: fullWidth ? .infinity : nil)
-        .background {
-            if #available(iOS 26.0, *) {
-                Capsule().fill(.clear).glassEffect()
-            } else {
-                Capsule().fill(iconColor.opacity(0.15))
+        .frame(height: 40)
+        .mask(
+            HStack(spacing: 0) {
+                // Left fade
+                LinearGradient(
+                    colors: [.clear, .black],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+
+                // Full opacity middle
+                Rectangle().fill(.black)
+
+                // Right fade
+                LinearGradient(
+                    colors: [.black, .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
             }
-        }
+        )
+        .modifier(GlassPillModifier(id: "pill", namespace: toolbarNamespace, iconColor: iconColor))
         .clipShape(Capsule())
     }
 
@@ -261,7 +304,19 @@ struct ShortcutKey: View {
             .frame(width: 32, height: 32)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ShortcutKeyButtonStyle(isActive: isActive))
+    }
+}
+
+// MARK: - Shortcut Key Button Style with press animation (pre-iOS 26)
+struct ShortcutKeyButtonStyle: ButtonStyle {
+    var isActive: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.85 : 1.0)
+            .opacity(configuration.isPressed ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -316,25 +371,61 @@ struct TerminalViewRepresentable: UIViewRepresentable {
 
     class Coordinator: NSObject, TerminalViewDelegate {
         var connectionManager: ConnectionManager
-        weak var terminalView: TerminalView?
-        private var outputObserver: NSObjectProtocol?
+
+        /// Last known terminal size from sizeChanged callback
+        private var lastCols: Int = 80
+        private var lastRows: Int = 24
+
+        /// Weak reference to the terminal view.
+        /// When set, consumes any pending scrollback data that was buffered during session switch.
+        weak var terminalView: TerminalView? {
+            didSet {
+                guard let tv = terminalView else { return }
+
+                // Consume any scrollback buffered during session switch.
+                // This must happen after the terminal is ready to display content.
+                // The server waits to send 'attached' until all scrollback is sent,
+                // ensuring pendingScrollback contains the complete session history.
+                Task { @MainActor in
+                    let pending = self.connectionManager.consumePendingScrollback()
+                    if !pending.isEmpty {
+                        tv.feed(text: pending)
+                        // Give terminal time to render, then trigger resize.
+                        // The resize causes the shell to redraw its prompt correctly
+                        // for this terminal's dimensions (fixes size mismatch from scrollback).
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            self.scrollToBottom()
+                            // Trigger resize to fix prompt rendering
+                            if self.lastCols > 0 && self.lastRows > 0 {
+                                self.connectionManager.sendResize(cols: self.lastCols, rows: self.lastRows)
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         init(connectionManager: ConnectionManager) {
             self.connectionManager = connectionManager
             super.init()
 
-            // Set up output handler
+            // Set up handler for live terminal output (data arriving after session is attached).
+            // This is called for any output that arrives after consumePendingScrollback() runs.
             Task { @MainActor in
                 connectionManager.onTerminalOutput = { [weak self] data in
                     self?.terminalView?.feed(text: data)
+                    // Auto-scroll to show new content
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        self?.scrollToBottom()
+                    }
                 }
             }
         }
 
-        deinit {
-            if let observer = outputObserver {
-                NotificationCenter.default.removeObserver(observer)
-            }
+        private func scrollToBottom() {
+            guard let tv = terminalView else { return }
+            let bottomOffset = CGPoint(x: 0, y: max(tv.contentSize.height - tv.bounds.height, 0))
+            tv.setContentOffset(bottomOffset, animated: false)
         }
 
         // Called when user types in terminal
@@ -357,6 +448,9 @@ struct TerminalViewRepresentable: UIViewRepresentable {
 
         // Called when terminal size changes
         func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+            // Store for later use (e.g., triggering resize after scrollback load)
+            lastCols = newCols
+            lastRows = newRows
             Task { @MainActor in
                 connectionManager.sendResize(cols: newCols, rows: newRows)
             }

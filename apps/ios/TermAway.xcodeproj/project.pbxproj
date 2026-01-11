@@ -22,6 +22,7 @@
 		1100000000000013 /* ShortcutsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000014 /* ShortcutsSettingsView.swift */; };
 		1100000000000014 /* ThemeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000015 /* ThemeSettingsView.swift */; };
 		1100000000000015 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000016 /* SettingsView.swift */; };
+		1100000000000016 /* GlassComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000017 /* GlassComponents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 		2200000000000014 /* ShortcutsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsView.swift; sourceTree = "<group>"; };
 		2200000000000015 /* ThemeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSettingsView.swift; sourceTree = "<group>"; };
 		2200000000000016 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		2200000000000017 /* GlassComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +82,7 @@
 			isa = PBXGroup;
 			children = (
 				2200000000000002 /* ContentView.swift */,
+				2200000000000017 /* GlassComponents.swift */,
 				2200000000000003 /* TerminalContainerView.swift */,
 				2200000000000004 /* ServerSettingsView.swift */,
 				2200000000000014 /* ShortcutsSettingsView.swift */,
@@ -194,6 +197,7 @@
 			files = (
 				1100000000000001 /* TermAwayApp.swift in Sources */,
 				1100000000000002 /* ContentView.swift in Sources */,
+				1100000000000016 /* GlassComponents.swift in Sources */,
 				1100000000000003 /* TerminalContainerView.swift in Sources */,
 				1100000000000004 /* ServerSettingsView.swift in Sources */,
 				1100000000000005 /* Session.swift in Sources */,

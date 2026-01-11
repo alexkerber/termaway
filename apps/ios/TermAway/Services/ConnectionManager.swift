@@ -23,8 +23,29 @@ class ConnectionManager: ObservableObject {
     private let maxReconnectAttempts = 10
     private var appLifecycleObserver: NSObjectProtocol?
 
-    // Terminal data callback - set by TerminalView
+    // MARK: - Terminal Output Handling
+    //
+    // When switching sessions, there's a critical timing issue:
+    // 1. Server sends scrollback history immediately upon attach
+    // 2. iOS app needs time to create the new terminal view
+    // 3. Data arriving before terminal is ready would be lost
+    //
+    // Solution: Buffer scrollback during session switch.
+    // - attachToSession() sets isReceivingScrollback = true
+    // - All output goes to pendingScrollback buffer
+    // - Server sends 'attached' AFTER all scrollback is sent
+    // - iOS creates terminal, which calls consumePendingScrollback()
+    // - Buffer is cleared, isReceivingScrollback = false
+    // - Subsequent output goes directly to onTerminalOutput
+
+    /// Callback for live terminal output. Set by TerminalViewRepresentable.
     var onTerminalOutput: ((String) -> Void)?
+
+    /// Buffer for scrollback during session switch. Consumed when new terminal is ready.
+    private var pendingScrollback: String = ""
+
+    /// True while switching sessions. Output goes to buffer instead of terminal.
+    private var isReceivingScrollback = false
 
     var serverURL: String? {
         UserDefaults.standard.string(forKey: "serverURL") ?? "ws://192.168.1.231:3000"
@@ -100,6 +121,8 @@ class ConnectionManager: ObservableObject {
         isAuthenticated = false
         authRequired = false
         isAuthenticating = false
+        pendingScrollback = ""
+        isReceivingScrollback = false
 
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
@@ -111,18 +134,16 @@ class ConnectionManager: ObservableObject {
         // Start receiving messages
         receiveMessage()
 
-        // Check connection after a delay
+        // Timeout if server doesn't respond within 5 seconds
+        // We only mark as connected when we receive auth-required message
         Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if webSocket?.state == .running {
-                isConnected = true
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            // If still connecting after 5s, the server isn't responding
+            if isConnecting && !isConnected {
                 isConnecting = false
-                isReconnecting = false
-                reconnectAttempts = 0
-                // Server will send auth-required message, which triggers auth flow
-            } else {
-                isConnecting = false
-                lastError = "Connection failed"
+                lastError = "Unable to connect to server"
+                webSocket?.cancel(with: .goingAway, reason: nil)
+                webSocket = nil
                 attemptReconnect()
             }
         }
@@ -146,6 +167,8 @@ class ConnectionManager: ObservableObject {
         sessions = []
         currentSession = nil
         lastError = nil  // Clear any error on intentional disconnect
+        pendingScrollback = ""
+        isReceivingScrollback = false
     }
 
     private func receiveMessage() {
@@ -175,7 +198,8 @@ class ConnectionManager: ObservableObject {
 
                     // Only show error and attempt reconnect if we were supposed to be connected
                     if self.shouldAutoReconnect {
-                        self.lastError = error.localizedDescription
+                        // Show user-friendly error instead of raw WebSocket error
+                        self.lastError = "Unable to connect to server"
                         self.attemptReconnect()
                     }
                     // If intentionally disconnected (shouldAutoReconnect = false), don't show error
@@ -226,6 +250,11 @@ class ConnectionManager: ObservableObject {
 
         isConnecting = true
 
+        // Clear stale session data - server will send fresh list
+        sessions = []
+        pendingScrollback = ""
+        isReceivingScrollback = false
+
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
         urlSession = URLSession(configuration: config)
@@ -236,24 +265,15 @@ class ConnectionManager: ObservableObject {
         // Start receiving messages
         receiveMessage()
 
-        // Check connection after a delay
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        // Timeout if server doesn't respond within 5 seconds
+        // Connection is confirmed when we receive auth-required message
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
 
-        if webSocket?.state == .running {
-            isConnected = true
+        // If still connecting after 5s, the server isn't responding
+        if isConnecting && !isConnected {
             isConnecting = false
-            isReconnecting = false
-            reconnectAttempts = 0
-            lastError = nil
-            // Request session list
-            sendMessage(["type": "list"])
-
-            // Re-attach to current session if we had one
-            if let sessionName = currentSession?.name {
-                sendMessage(["type": "attach", "name": sessionName])
-            }
-        } else {
-            isConnecting = false
+            webSocket?.cancel(with: .goingAway, reason: nil)
+            webSocket = nil
             // Try again
             attemptReconnect()
         }
@@ -278,6 +298,12 @@ class ConnectionManager: ObservableObject {
         // Handle auth messages first
         switch type {
         case "auth-required":
+            // Server responded - we're truly connected now
+            isConnected = true
+            isConnecting = false
+            isReconnecting = false
+            reconnectAttempts = 0
+
             let required = json["required"] as? Bool ?? false
             authRequired = required
             if required {
@@ -356,7 +382,12 @@ class ConnectionManager: ObservableObject {
             }
 
         case .output(let data):
-            onTerminalOutput?(data)
+            if isReceivingScrollback {
+                // Buffer data while switching sessions - new terminal will retrieve it
+                pendingScrollback += data
+            } else {
+                onTerminalOutput?(data)
+            }
 
         case .created(let name):
             print("Session created: \(name)")
@@ -427,8 +458,22 @@ class ConnectionManager: ObservableObject {
         sendMessage(["type": "create", "name": name])
     }
 
+    /// Attach to a session by name.
+    /// Starts buffering output until the new terminal is ready to receive it.
     func attachToSession(_ name: String) {
+        // Clear buffer and start collecting scrollback
+        pendingScrollback = ""
+        isReceivingScrollback = true
         sendMessage(["type": "attach", "name": name])
+    }
+
+    /// Called by TerminalViewRepresentable when the new terminal is ready.
+    /// Returns all buffered scrollback and stops buffering mode.
+    func consumePendingScrollback() -> String {
+        let data = pendingScrollback
+        pendingScrollback = ""
+        isReceivingScrollback = false
+        return data
     }
 
     func killSession(_ name: String) {

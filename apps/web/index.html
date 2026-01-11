@@ -11,7 +11,9 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="/xterm/css/xterm.css">
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=10">
+  <!-- Lucide icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Apply theme immediately to prevent flash -->
   <script>
     (function() {
@@ -31,17 +33,17 @@
     <header id="header">
       <div id="tabs-container">
         <div id="tabs"></div>
-        <button id="new-session-btn" title="Create new session">+</button>
+        <button id="new-session-btn" title="Create new session"><i data-lucide="plus"></i></button>
       </div>
       <div id="status-container">
-        <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar">⌨</button>
-        <button class="header-btn" id="theme-toggle-header" title="Toggle theme">◐</button>
-        <button class="header-btn" id="settings-btn-header" title="Settings">⚙</button>
+        <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar"><i data-lucide="keyboard"></i></button>
+        <button class="header-btn" id="theme-toggle-header" title="Toggle theme"><i data-lucide="sun-moon"></i></button>
+        <button class="header-btn" id="settings-btn-header" title="Settings"><i data-lucide="settings"></i></button>
         <span id="connection-status" class="connecting" title="Connection status">
           <span class="status-dot"></span>
           <span class="status-text">Connecting...</span>
         </span>
-        <button class="header-btn" id="disconnect-btn" title="Disconnect" style="display:none;">⏻</button>
+        <button class="header-btn" id="disconnect-btn" title="Disconnect" style="display:none;"><i data-lucide="power"></i></button>
       </div>
     </header>
 
@@ -53,22 +55,25 @@
       <button class="toolbar-btn" data-key="Escape">Esc</button>
       <button class="toolbar-btn" data-key="Tab">Tab</button>
       <span class="toolbar-separator"></span>
-      <button class="toolbar-btn" data-key="ArrowUp">↑</button>
-      <button class="toolbar-btn" data-key="ArrowDown">↓</button>
-      <button class="toolbar-btn" data-key="ArrowLeft">←</button>
-      <button class="toolbar-btn" data-key="ArrowRight">→</button>
+      <button class="toolbar-btn" data-key="ArrowUp"><i data-lucide="arrow-up"></i></button>
+      <button class="toolbar-btn" data-key="ArrowDown"><i data-lucide="arrow-down"></i></button>
+      <button class="toolbar-btn" data-key="ArrowLeft"><i data-lucide="arrow-left"></i></button>
+      <button class="toolbar-btn" data-key="ArrowRight"><i data-lucide="arrow-right"></i></button>
       <span class="toolbar-separator"></span>
       <button class="toolbar-btn" data-sequence="ctrl+c">^C</button>
       <button class="toolbar-btn" data-sequence="ctrl+d">^D</button>
       <button class="toolbar-btn" data-sequence="ctrl+z">^Z</button>
       <span class="toolbar-spacer"></span>
-      <button class="toolbar-btn icon" id="font-decrease" title="Decrease font">A−</button>
-      <button class="toolbar-btn icon" id="font-increase" title="Increase font">A+</button>
+      <button class="toolbar-btn icon" id="font-decrease" title="Decrease font"><i data-lucide="a-arrow-down"></i></button>
+      <button class="toolbar-btn icon" id="font-increase" title="Increase font"><i data-lucide="a-arrow-up"></i></button>
     </div>
 
     <!-- Terminal container -->
     <main id="terminal-container">
       <div id="terminal"></div>
+      <button id="scroll-to-bottom" class="scroll-hidden" title="Scroll to bottom">
+        <i data-lucide="arrow-down-to-line"></i>
+      </button>
       <div id="no-session" class="hidden">
         <div class="no-session-content">
           <h2>No Active Session</h2>
@@ -83,7 +88,7 @@
       <div class="settings-content">
         <div class="settings-header">
           <h3>Settings</h3>
-          <button id="settings-close" class="settings-close">×</button>
+          <button id="settings-close" class="settings-close"><i data-lucide="x"></i></button>
         </div>
         <div class="settings-section">
           <label>Quick Commands</label>
@@ -124,6 +129,10 @@
     </div>
   </div>
 
-  <script src="terminal.js?v=12"></script>
+  <script src="terminal.js?v=17"></script>
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+  </script>
 </body>
 </html>

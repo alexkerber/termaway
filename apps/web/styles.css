@@ -158,10 +158,15 @@ body {
   border: 1px dashed var(--border-color);
   border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 18px;
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
+}
+
+#new-session-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
 }
 
 #new-session-btn:hover {
@@ -190,9 +195,14 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 16px;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.header-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.5;
 }
 
 .header-btn:hover {
@@ -354,6 +364,65 @@ body {
   right: 8px;
   bottom: 8px;
   overflow: hidden;
+}
+
+/* Scroll to Bottom Button */
+#scroll-to-bottom {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease,
+    background 0.15s ease,
+    visibility 0s linear 0s;
+  visibility: visible;
+}
+
+#scroll-to-bottom svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
+
+#scroll-to-bottom:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(0) scale(1.05);
+}
+
+#scroll-to-bottom.scroll-hidden {
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease,
+    visibility 0s linear 0.25s;
+}
+
+[data-theme="light"] #scroll-to-bottom {
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] #scroll-to-bottom:hover {
+  background: rgba(0, 0, 0, 0.15);
 }
 
 /* No Session State */
@@ -670,7 +739,12 @@ body {
 .toolbar-btn.icon {
   min-width: 44px;
   padding: 0 10px;
-  font-size: 16px;
+}
+
+.toolbar-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
 }
 
 .toolbar-separator {
@@ -726,14 +800,22 @@ body {
 }
 
 .settings-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
   border: none;
   background: none;
   color: var(--text-secondary);
-  font-size: 24px;
   cursor: pointer;
   border-radius: 6px;
+}
+
+.settings-close svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
 }
 
 .settings-close:hover {

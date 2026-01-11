@@ -34,10 +34,19 @@ struct SettingsView: View {
                         }
                     }
 
-                    NavigationLink {
-                        ShortcutsSettingsView()
-                    } label: {
-                        Label("Keyboard Shortcuts", systemImage: "keyboard")
+                    Toggle(isOn: Binding(
+                        get: { shortcutsManager.showToolbar },
+                        set: { shortcutsManager.showToolbar = $0 }
+                    )) {
+                        Label("Shortcuts Toolbar", systemImage: "keyboard")
+                    }
+
+                    if shortcutsManager.showToolbar {
+                        NavigationLink {
+                            ShortcutsSettingsView()
+                        } label: {
+                            Label("Edit Shortcuts", systemImage: "slider.horizontal.3")
+                        }
                     }
                 } header: {
                     Text("Terminal")
@@ -107,6 +116,7 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .modifier(ToolbarGlassModifier())
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {

@@ -15,7 +15,7 @@ struct ServerSettingsView: View {
                 Section {
                     HStack {
                         Image(systemName: "link")
-                            .foregroundColor(.blue)
+                            .foregroundColor(.secondary)
                             .frame(width: 28)
 
                         TextField("ws://192.168.1.100:3000", text: $serverURL)
@@ -24,7 +24,7 @@ struct ServerSettingsView: View {
                             .autocorrectionDisabled()
                     }
                 } header: {
-                    Label("Server Connection", systemImage: "server.rack")
+                    Text("Server Connection")
                 } footer: {
                     Text("Enter the WebSocket URL of your TermAway server")
                 }
@@ -32,7 +32,7 @@ struct ServerSettingsView: View {
                 Section {
                     HStack {
                         Image(systemName: "lock")
-                            .foregroundColor(.orange)
+                            .foregroundColor(.secondary)
                             .frame(width: 28)
 
                         SecureField("Password (optional)", text: $password)
@@ -40,22 +40,17 @@ struct ServerSettingsView: View {
                             .autocorrectionDisabled()
                     }
                 } header: {
-                    Label("Authentication", systemImage: "key")
+                    Text("Authentication")
                 } footer: {
                     Text("Enter the password if your server requires authentication")
                 }
 
                 Section {
                     Toggle(isOn: $clipboardSync) {
-                        HStack {
-                            Image(systemName: "doc.on.clipboard")
-                                .foregroundColor(.green)
-                                .frame(width: 28)
-                            Text("Clipboard Sync")
-                        }
+                        Text("Clipboard Sync")
                     }
                 } header: {
-                    Label("Features", systemImage: "sparkles")
+                    Text("Features")
                 } footer: {
                     Text("Sync clipboard between this device and the server")
                 }
@@ -63,7 +58,7 @@ struct ServerSettingsView: View {
                 Section {
                     DiscoveredServersView(serverURL: $serverURL)
                 } header: {
-                    Label("Discovered Servers", systemImage: "bonjour")
+                    Text("Discovered Servers")
                 } footer: {
                     Text("Servers advertising via Bonjour will appear automatically")
                 }
@@ -86,8 +81,10 @@ struct ServerSettingsView: View {
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.secondary)
                     }
                 }
             }

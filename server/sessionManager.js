@@ -1,375 +1,329 @@
 import pty from "node-pty";
 import os from "os";
-import { execFileSync } from "child_process";
 
-// Tmux session prefix to avoid conflicts with user sessions
-const TMUX_PREFIX = "termaway-";
+// =============================================================================
+// Configuration
+// =============================================================================
 
-/**
- * Check if tmux is available on the system
- */
-function isTmuxAvailable() {
-  try {
-    execFileSync("which", ["tmux"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
+const CONFIG = {
+  defaultCols: 80,
+  defaultRows: 24,
+  maxScrollback: 2_000_000, // ~2MB of scrollback per session
+};
+
+// =============================================================================
+// Session Class
+// =============================================================================
+
+class Session {
+  constructor(name, ptyProcess) {
+    this.name = name;
+    this.pty = ptyProcess;
+    this.clients = new Set();
+    this.scrollback = [];
+    this.scrollbackSize = 0;
+    this.createdAt = new Date();
+    this.lastCols = CONFIG.defaultCols;
+    this.lastRows = CONFIG.defaultRows;
+    this.lastResizeAt = 0;
+    // Track each client's terminal size for multi-client scenarios
+    this.clientSizes = new WeakMap();
+  }
+
+  // Store output in scrollback buffer
+  pushScrollback(data) {
+    this.scrollback.push(data);
+    this.scrollbackSize += data.length;
+
+    // Trim if over limit
+    while (
+      this.scrollbackSize > CONFIG.maxScrollback &&
+      this.scrollback.length > 0
+    ) {
+      this.scrollbackSize -= this.scrollback.shift().length;
+    }
+  }
+
+  // Get full scrollback as string
+  getScrollback() {
+    return this.scrollback.join("");
+  }
+
+  // Send message to one client
+  send(ws, message) {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+
+  // Broadcast message to all clients
+  broadcast(message) {
+    const json = JSON.stringify(message);
+    for (const client of this.clients) {
+      if (client.readyState === 1) {
+        client.send(json);
+      }
+    }
   }
 }
 
-/**
- * Get the tmux session name from user-visible name
- */
-function getTmuxSessionName(name) {
-  return `${TMUX_PREFIX}${name}`;
-}
+// =============================================================================
+// Session Manager
+// =============================================================================
 
-/**
- * Get the user-visible name from tmux session name
- */
-function getUserSessionName(tmuxName) {
-  if (tmuxName.startsWith(TMUX_PREFIX)) {
-    return tmuxName.slice(TMUX_PREFIX.length);
-  }
-  return tmuxName;
-}
-
-/**
- * List all TermAway tmux sessions
- */
-function listTmuxSessions() {
-  try {
-    const output = execFileSync(
-      "tmux",
-      ["list-sessions", "-F", "#{session_name}"],
-      {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "ignore"],
-      },
-    );
-    return output
-      .trim()
-      .split("\n")
-      .filter((name) => name.startsWith(TMUX_PREFIX))
-      .map(getUserSessionName)
-      .filter((name) => name.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Check if a tmux session exists
- */
-function tmuxSessionExists(name) {
-  try {
-    execFileSync("tmux", ["has-session", "-t", getTmuxSessionName(name)], {
-      stdio: "ignore",
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Create a new tmux session (detached)
- */
-function createTmuxSession(name) {
-  const tmuxName = getTmuxSessionName(name);
-  const shell = process.env.SHELL || "/bin/bash";
-
-  execFileSync(
-    "tmux",
-    ["new-session", "-d", "-s", tmuxName, "-x", "80", "-y", "24", shell, "-l"],
-    {
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-      },
-    },
-  );
-}
-
-/**
- * Kill a tmux session
- */
-function killTmuxSession(name) {
-  try {
-    execFileSync("tmux", ["kill-session", "-t", getTmuxSessionName(name)], {
-      stdio: "ignore",
-    });
-  } catch {
-    // Session may already be dead
-  }
-}
-
-/**
- * Rename a tmux session
- */
-function renameTmuxSession(oldName, newName) {
-  execFileSync("tmux", [
-    "rename-session",
-    "-t",
-    getTmuxSessionName(oldName),
-    getTmuxSessionName(newName),
-  ]);
-}
-
-/**
- * Manages PTY sessions with named persistent sessions
- * Supports tmux-backed sessions for persistence across server restarts
- */
 class SessionManager {
   constructor() {
     this.sessions = new Map();
-    this.scrollbackSize = 10000;
-    this.sharedClipboard = "";
-
-    // Check tmux availability at startup
-    this.tmuxAvailable = isTmuxAvailable();
-    if (this.tmuxAvailable) {
-      console.log("tmux detected - session persistence enabled");
-    } else {
-      console.log("tmux not found - sessions will not persist across restarts");
-    }
+    this.clipboard = "";
+    console.log("Session manager ready (PTY mode)");
   }
 
-  /**
-   * Restore existing tmux sessions on server startup
-   */
-  restoreExistingSessions() {
-    if (!this.tmuxAvailable) {
-      return [];
+  // ---------------------------------------------------------------------------
+  // Session Lifecycle
+  // ---------------------------------------------------------------------------
+
+  create(name) {
+    if (this.sessions.has(name)) {
+      throw new Error(`Session "${name}" already exists`);
     }
 
-    const existingSessions = listTmuxSessions();
-    const restored = [];
-
-    for (const name of existingSessions) {
-      try {
-        this._attachToTmuxSession(name);
-        restored.push(name);
-        console.log(`Restored tmux session "${name}"`);
-      } catch (error) {
-        console.error(`Failed to restore session "${name}":`, error.message);
-      }
-    }
-
-    return restored;
-  }
-
-  /**
-   * Internal: Attach node-pty to an existing tmux session
-   */
-  _attachToTmuxSession(name) {
-    const tmuxName = getTmuxSessionName(name);
-
-    const env = {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-      LANG: process.env.LANG || "en_US.UTF-8",
-      LC_ALL: process.env.LC_ALL || process.env.LANG || "en_US.UTF-8",
-    };
-
-    const ptyProcess = pty.spawn("tmux", ["attach-session", "-t", tmuxName], {
-      name: "xterm-256color",
-      cols: 80,
-      rows: 24,
-      cwd: process.env.HOME || os.homedir(),
-      env: env,
-    });
-
-    const session = {
-      name,
-      pty: ptyProcess,
-      scrollback: [],
-      clients: new Set(),
-      createdAt: new Date(),
-      isTmux: true,
-    };
-
-    this._setupPtyHandlers(session);
-    this.sessions.set(name, session);
-
-    return session;
-  }
-
-  /**
-   * Setup PTY event handlers for a session
-   */
-  _setupPtyHandlers(session) {
-    const { name, pty: ptyProcess } = session;
-
-    ptyProcess.onData((data) => {
-      session.scrollback.push(data);
-      let totalLength = 0;
-      for (const chunk of session.scrollback) {
-        totalLength += chunk.length;
-      }
-      while (
-        totalLength > this.scrollbackSize * 200 &&
-        session.scrollback.length > 0
-      ) {
-        const removed = session.scrollback.shift();
-        totalLength -= removed.length;
-      }
-
-      for (const client of session.clients) {
-        if (client.readyState === 1) {
-          client.send(
-            JSON.stringify({
-              type: "output",
-              data: data,
-            }),
-          );
-        }
-      }
-    });
-
-    ptyProcess.onExit(({ exitCode, signal }) => {
-      console.log(
-        `Session "${name}" PTY exited with code ${exitCode}, signal ${signal}`,
-      );
-
-      // For tmux sessions, the PTY exit might just mean detach
-      if (session.isTmux && tmuxSessionExists(name)) {
-        console.log(`tmux session "${name}" still exists - can be reattached`);
-        for (const client of session.clients) {
-          if (client.readyState === 1) {
-            client.send(
-              JSON.stringify({
-                type: "disconnected",
-                name: name,
-                message: "PTY disconnected, tmux session still running",
-              }),
-            );
-          }
-        }
-        session.clients.clear();
-        session.pty = null;
-        return;
-      }
-
-      // Non-tmux session or tmux session is gone
-      for (const client of session.clients) {
-        if (client.readyState === 1) {
-          client.send(
-            JSON.stringify({
-              type: "exited",
-              name: name,
-              exitCode,
-              signal,
-            }),
-          );
-        }
-      }
-      this.sessions.delete(name);
-    });
-
-    console.log(
-      `Session "${name}" ready (${session.isTmux ? "tmux" : "raw shell"})`,
-    );
-  }
-
-  /**
-   * Create a new session backed by tmux
-   */
-  _createTmuxSession(name) {
-    if (tmuxSessionExists(name)) {
-      throw new Error(`tmux session "${name}" already exists`);
-    }
-
-    createTmuxSession(name);
-    return this._attachToTmuxSession(name);
-  }
-
-  /**
-   * Create a raw PTY session (fallback when tmux unavailable)
-   */
-  _createRawSession(name) {
     const shell = process.env.SHELL || "/bin/bash";
-    const env = {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-      LANG: process.env.LANG || "en_US.UTF-8",
-      LC_ALL: process.env.LC_ALL || process.env.LANG || "en_US.UTF-8",
-    };
-
     const ptyProcess = pty.spawn(shell, ["-l"], {
       name: "xterm-256color",
-      cols: 80,
-      rows: 24,
+      cols: CONFIG.defaultCols,
+      rows: CONFIG.defaultRows,
       cwd: process.env.HOME || os.homedir(),
-      env: env,
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        LANG: process.env.LANG || "en_US.UTF-8",
+        LC_ALL: process.env.LC_ALL || process.env.LANG || "en_US.UTF-8",
+        // Suppress zsh's PROMPT_SP (the % character shown when output lacks newline)
+        PROMPT_EOL_MARK: "",
+      },
     });
 
-    const session = {
-      name,
-      pty: ptyProcess,
-      scrollback: [],
-      clients: new Set(),
-      createdAt: new Date(),
-      isTmux: false,
-    };
-
-    this._setupPtyHandlers(session);
+    const session = new Session(name, ptyProcess);
     this.sessions.set(name, session);
+    this._setupHandlers(session);
 
-    console.log(`Created session "${name}" with shell ${shell} (no tmux)`);
+    console.log(`Created session "${name}"`);
     return session;
   }
 
-  /**
-   * Reconnect to a session whose PTY was disconnected but tmux is still running
-   */
-  reconnect(name) {
+  kill(name) {
     const session = this.sessions.get(name);
     if (!session) {
       throw new Error(`Session "${name}" not found`);
     }
 
-    if (session.pty) {
-      return session;
+    session.pty.kill();
+    session.broadcast({ type: "killed", name });
+    this.sessions.delete(name);
+
+    console.log(`Killed session "${name}"`);
+  }
+
+  rename(oldName, newName) {
+    const session = this.sessions.get(oldName);
+    if (!session) {
+      throw new Error(`Session "${oldName}" not found`);
+    }
+    if (this.sessions.has(newName)) {
+      throw new Error(`Session "${newName}" already exists`);
     }
 
-    if (!session.isTmux || !this.tmuxAvailable) {
-      throw new Error(
-        `Session "${name}" cannot be reconnected (not a tmux session)`,
+    session.name = newName;
+    this.sessions.delete(oldName);
+    this.sessions.set(newName, session);
+    session.broadcast({ type: "renamed", oldName, newName });
+
+    console.log(`Renamed "${oldName}" to "${newName}"`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Client Management
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Attach a client to a session and send existing scrollback.
+   * Returns a Promise that resolves when all scrollback has been sent.
+   * This ensures the caller can wait before sending 'attached' confirmation.
+   */
+  attach(name, ws) {
+    const session = this.sessions.get(name);
+    if (!session) {
+      throw new Error(`Session "${name}" not found`);
+    }
+
+    session.clients.add(ws);
+
+    // Send existing scrollback to new client in chunks to prevent overwhelming mobile clients
+    const CHUNK_SIZE = 100_000; // 100KB per chunk
+    const scrollback = session.getScrollback();
+
+    // Create a promise that resolves when all scrollback is sent
+    const scrollbackPromise = new Promise((resolve) => {
+      if (!scrollback || scrollback.length === 0) {
+        resolve();
+        return;
+      }
+
+      console.log(
+        `Sending scrollback (${scrollback.length} bytes, ${session.scrollback.length} chunks)`,
       );
-    }
 
-    if (!tmuxSessionExists(name)) {
-      this.sessions.delete(name);
-      throw new Error(`tmux session "${name}" no longer exists`);
-    }
-
-    const tmuxName = getTmuxSessionName(name);
-    const env = {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-      LANG: process.env.LANG || "en_US.UTF-8",
-      LC_ALL: process.env.LC_ALL || process.env.LANG || "en_US.UTF-8",
-    };
-
-    const ptyProcess = pty.spawn("tmux", ["attach-session", "-t", tmuxName], {
-      name: "xterm-256color",
-      cols: 80,
-      rows: 24,
-      cwd: process.env.HOME || os.homedir(),
-      env: env,
+      if (scrollback.length <= CHUNK_SIZE) {
+        // Small enough to send in one message
+        session.send(ws, { type: "output", data: scrollback });
+        resolve();
+      } else {
+        // Send in chunks with small delays to let client process
+        let offset = 0;
+        const sendChunk = () => {
+          if (offset >= scrollback.length) {
+            resolve(); // All chunks sent
+            return;
+          }
+          const chunk = scrollback.slice(offset, offset + CHUNK_SIZE);
+          session.send(ws, { type: "output", data: chunk });
+          offset += CHUNK_SIZE;
+          if (offset < scrollback.length) {
+            setTimeout(sendChunk, 50); // 50ms delay between chunks
+          } else {
+            resolve(); // Last chunk sent
+          }
+        };
+        sendChunk();
+      }
     });
 
-    session.pty = ptyProcess;
-    session.scrollback = [];
-    this._setupPtyHandlers(session);
+    console.log(
+      `Client attached to "${name}" (${session.clients.size} clients)`,
+    );
 
-    console.log(`Reconnected to tmux session "${name}"`);
+    // Return both session and scrollback promise
+    session.scrollbackPromise = scrollbackPromise;
     return session;
   }
+
+  detach(name, ws) {
+    const session = this.sessions.get(name);
+    if (session && session.clients.delete(ws)) {
+      console.log(
+        `Client detached from "${name}" (${session.clients.size} clients)`,
+      );
+      // Recalculate size now that this client is gone
+      this._recalculateSize(session);
+    }
+  }
+
+  detachAll(ws) {
+    for (const [name, session] of this.sessions) {
+      if (session.clients.delete(ws)) {
+        console.log(
+          `Client detached from "${name}" (${session.clients.size} clients)`,
+        );
+        // Recalculate size now that this client is gone
+        this._recalculateSize(session);
+      }
+    }
+  }
+
+  // Recalculate PTY size based on remaining clients
+  _recalculateSize(session) {
+    if (session.clients.size === 0) return;
+
+    let minCols = Infinity;
+    let minRows = Infinity;
+
+    for (const client of session.clients) {
+      const size = session.clientSizes.get(client);
+      if (size) {
+        minCols = Math.min(minCols, size.cols);
+        minRows = Math.min(minRows, size.rows);
+      }
+    }
+
+    // If we found valid sizes and they differ from current, resize
+    if (minCols !== Infinity && minRows !== Infinity) {
+      if (minCols !== session.lastCols || minRows !== session.lastRows) {
+        session.lastCols = minCols;
+        session.lastRows = minRows;
+        session.pty.resize(minCols, minRows);
+        console.log(
+          `Recalculated "${session.name}" to ${minCols}x${minRows} (${session.clients.size} clients)`,
+        );
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Terminal I/O
+  // ---------------------------------------------------------------------------
+
+  write(name, data) {
+    const session = this.sessions.get(name);
+    if (!session) {
+      throw new Error(`Session "${name}" not found`);
+    }
+    session.pty.write(data);
+  }
+
+  resize(name, cols, rows, ws = null) {
+    const session = this.sessions.get(name);
+    if (!session) {
+      throw new Error(`Session "${name}" not found`);
+    }
+
+    // Ignore tiny sizes that break terminal rendering
+    if (cols < 10 || rows < 5) {
+      console.log(`Ignoring tiny resize for "${name}": ${cols}x${rows}`);
+      return;
+    }
+
+    // Store this client's preferred size
+    if (ws) {
+      session.clientSizes.set(ws, { cols, rows });
+    }
+
+    // Calculate minimum size across all connected clients
+    let minCols = cols;
+    let minRows = rows;
+    for (const client of session.clients) {
+      const size = session.clientSizes.get(client);
+      if (size) {
+        minCols = Math.min(minCols, size.cols);
+        minRows = Math.min(minRows, size.rows);
+      }
+    }
+
+    // Ignore if effective size hasn't changed
+    if (minCols === session.lastCols && minRows === session.lastRows) {
+      return;
+    }
+
+    // Resize cooldown: ignore resizes within 100ms of last resize
+    // This prevents "resize fights" when multiple clients connect
+    const now = Date.now();
+    if (now - session.lastResizeAt < 100) {
+      console.log(`Ignoring rapid resize for "${name}": ${minCols}x${minRows}`);
+      return;
+    }
+
+    session.lastCols = minCols;
+    session.lastRows = minRows;
+    session.lastResizeAt = now;
+    session.pty.resize(minCols, minRows);
+    console.log(
+      `Resized "${name}" to ${minCols}x${minRows} (min of ${session.clients.size} clients)`,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Queries
+  // ---------------------------------------------------------------------------
 
   list() {
     return Array.from(this.sessions.keys());
@@ -383,190 +337,54 @@ class SessionManager {
     return this.sessions.get(name);
   }
 
-  create(name) {
-    if (this.sessions.has(name)) {
-      throw new Error(`Session "${name}" already exists`);
-    }
-
-    if (this.tmuxAvailable) {
-      return this._createTmuxSession(name);
-    }
-
-    return this._createRawSession(name);
-  }
-
-  attach(name, ws) {
-    const session = this.sessions.get(name);
-    if (!session) {
-      throw new Error(`Session "${name}" not found`);
-    }
-
-    // If PTY is disconnected but tmux session exists, reconnect
-    if (!session.pty && session.isTmux) {
-      this.reconnect(name);
-    }
-
-    session.clients.add(ws);
-    if (session.scrollback.length > 0) {
-      const scrollbackData = session.scrollback.join("");
-      ws.send(
-        JSON.stringify({
-          type: "output",
-          data: scrollbackData,
-        }),
-      );
-    }
-
-    console.log(
-      `Client attached to session "${name}" (${session.clients.size} clients)`,
-    );
-    return session;
-  }
-
-  detach(name, ws) {
-    const session = this.sessions.get(name);
-    if (session) {
-      session.clients.delete(ws);
-      console.log(
-        `Client detached from session "${name}" (${session.clients.size} clients)`,
-      );
-    }
-  }
-
-  detachAll(ws) {
-    for (const [name, session] of this.sessions) {
-      if (session.clients.has(ws)) {
-        session.clients.delete(ws);
-        console.log(
-          `Client detached from session "${name}" (${session.clients.size} clients)`,
-        );
-      }
-    }
-  }
-
-  write(name, data) {
-    const session = this.sessions.get(name);
-    if (!session) {
-      throw new Error(`Session "${name}" not found`);
-    }
-    if (!session.pty) {
-      throw new Error(`Session "${name}" is disconnected`);
-    }
-    session.pty.write(data);
-  }
-
-  resize(name, cols, rows) {
-    const session = this.sessions.get(name);
-    if (!session) {
-      throw new Error(`Session "${name}" not found`);
-    }
-    if (!session.pty) {
-      throw new Error(`Session "${name}" is disconnected`);
-    }
-    session.pty.resize(cols, rows);
-    console.log(`Resized session "${name}" to ${cols}x${rows}`);
-  }
-
-  kill(name) {
-    const session = this.sessions.get(name);
-    if (!session) {
-      throw new Error(`Session "${name}" not found`);
-    }
-
-    // Kill the tmux session if applicable
-    if (session.isTmux && this.tmuxAvailable) {
-      killTmuxSession(name);
-    }
-
-    // Kill the PTY process
-    if (session.pty) {
-      session.pty.kill();
-    }
-
-    for (const client of session.clients) {
-      if (client.readyState === 1) {
-        client.send(
-          JSON.stringify({
-            type: "killed",
-            name: name,
-          }),
-        );
-      }
-    }
-
-    this.sessions.delete(name);
-    console.log(`Killed session "${name}"`);
-  }
-
-  rename(oldName, newName) {
-    if (!this.sessions.has(oldName)) {
-      throw new Error(`Session "${oldName}" not found`);
-    }
-    if (this.sessions.has(newName)) {
-      throw new Error(`Session "${newName}" already exists`);
-    }
-
-    const session = this.sessions.get(oldName);
-
-    // Rename the tmux session if applicable
-    if (session.isTmux && this.tmuxAvailable) {
-      renameTmuxSession(oldName, newName);
-    }
-
-    session.name = newName;
-    this.sessions.delete(oldName);
-    this.sessions.set(newName, session);
-
-    for (const client of session.clients) {
-      if (client.readyState === 1) {
-        client.send(
-          JSON.stringify({
-            type: "renamed",
-            oldName,
-            newName,
-          }),
-        );
-      }
-    }
-
-    console.log(`Renamed session "${oldName}" to "${newName}"`);
-  }
-
   info(name) {
     const session = this.sessions.get(name);
-    if (!session) {
-      return null;
-    }
+    if (!session) return null;
+
     return {
       name: session.name,
       clientCount: session.clients.size,
       createdAt: session.createdAt,
       scrollbackLength: session.scrollback.length,
-      isTmux: session.isTmux || false,
-      isConnected: !!session.pty,
+      isTmux: false,
+      isConnected: true,
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Clipboard
+  // ---------------------------------------------------------------------------
+
   setClipboard(content) {
-    this.sharedClipboard = content || "";
-    console.log(`Clipboard updated (${this.sharedClipboard.length} chars)`);
+    this.clipboard = content || "";
   }
 
   getClipboard() {
-    return this.sharedClipboard;
+    return this.clipboard;
   }
 
-  /**
-   * Gracefully detach all PTYs without killing tmux sessions
-   * Called during server shutdown
-   */
-  detachAllPtys() {
-    for (const [name, session] of this.sessions) {
-      if (session.pty) {
-        session.pty.kill();
-        session.pty = null;
-      }
-    }
+  // ---------------------------------------------------------------------------
+  // Internal
+  // ---------------------------------------------------------------------------
+
+  _setupHandlers(session) {
+    session.pty.onData((data) => {
+      session.pushScrollback(data);
+      session.broadcast({ type: "output", data });
+    });
+
+    session.pty.onExit(({ exitCode, signal }) => {
+      console.log(
+        `Session "${session.name}" exited (code ${exitCode}, signal ${signal})`,
+      );
+      session.broadcast({
+        type: "exited",
+        name: session.name,
+        exitCode,
+        signal,
+      });
+      this.sessions.delete(session.name);
+    });
   }
 }
 
