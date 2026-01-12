@@ -28,6 +28,20 @@ const authAttempts = new Map(); // IP -> { count, firstAttempt }
 const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_WINDOW_MS = 60000; // 1 minute window
 
+// Helper: Get formatted session list
+function getSessionList() {
+  return sessionManager.list().map((name) => {
+    const info = sessionManager.info(name);
+    return {
+      name,
+      clientCount: info.clientCount,
+      createdAt: info.createdAt,
+      isTmux: info.isTmux,
+      isConnected: info.isConnected,
+    };
+  });
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -235,31 +249,27 @@ wss.on("connection", (ws, req) => {
     handleMessage(ws, msg);
   });
 
-  ws.on("close", () => {
+  // Helper to clean up WebSocket state
+  function cleanup() {
     const wasAuthenticated = wsAuthMap.get(ws);
     const clientInfo = wsClientInfo.get(ws);
-    console.log("WebSocket disconnected");
     sessionManager.detachAll(ws);
     wsSessionMap.delete(ws);
     wsAuthMap.delete(ws);
     wsClientInfo.delete(ws);
-    // Broadcast disconnect event if they were authenticated
     if (wasAuthenticated && clientInfo) {
       broadcastClientEvent("client-disconnected", clientInfo.ip);
     }
+  }
+
+  ws.on("close", () => {
+    console.log("WebSocket disconnected");
+    cleanup();
   });
 
   ws.on("error", (error) => {
-    const wasAuthenticated = wsAuthMap.get(ws);
-    const clientInfo = wsClientInfo.get(ws);
     console.error("WebSocket error:", error);
-    sessionManager.detachAll(ws);
-    wsSessionMap.delete(ws);
-    wsAuthMap.delete(ws);
-    wsClientInfo.delete(ws);
-    if (wasAuthenticated && clientInfo) {
-      broadcastClientEvent("client-disconnected", clientInfo.ip);
-    }
+    cleanup();
   });
 });
 
@@ -402,17 +412,7 @@ function handleMessage(ws, msg) {
  * List all sessions
  */
 function handleList(ws) {
-  const sessions = sessionManager.list().map((name) => {
-    const info = sessionManager.info(name);
-    return {
-      name,
-      clientCount: info.clientCount,
-      createdAt: info.createdAt,
-      isTmux: info.isTmux,
-      isConnected: info.isConnected,
-    };
-  });
-  ws.send(JSON.stringify({ type: "sessions", list: sessions }));
+  ws.send(JSON.stringify({ type: "sessions", list: getSessionList() }));
 }
 
 /**
@@ -683,18 +683,7 @@ function handleKickClient(ws, clientId) {
  * Broadcast session list to all connected clients
  */
 function broadcastSessionList() {
-  const sessions = sessionManager.list().map((name) => {
-    const info = sessionManager.info(name);
-    return {
-      name,
-      clientCount: info.clientCount,
-      createdAt: info.createdAt,
-      isTmux: info.isTmux,
-      isConnected: info.isConnected,
-    };
-  });
-
-  const message = JSON.stringify({ type: "sessions", list: sessions });
+  const message = JSON.stringify({ type: "sessions", list: getSessionList() });
 
   for (const client of wss.clients) {
     if (client.readyState === 1) {

@@ -12,6 +12,17 @@ extension View {
     }
 }
 
+// MARK: - Shared Helpers
+
+/// Calculate sheet detents based on session count
+func sessionSheetDetents(for count: Int) -> Set<PresentationDetent> {
+    let baseHeight: CGFloat = 150
+    let rowHeight: CGFloat = 80
+    let calculatedHeight = baseHeight + (CGFloat(count) * rowHeight)
+    let maxHeight: CGFloat = 650
+    return [.height(min(calculatedHeight, maxHeight)), .large]
+}
+
 struct ContentView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
@@ -29,21 +40,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if connectionManager.isConnected && connectionManager.isAuthenticated {
+            // Show sessions when connected AND (authenticated OR no auth required)
+            if connectionManager.isConnected && (connectionManager.isAuthenticated || !connectionManager.authRequired) {
                 // Use NavigationSplitView for iPad, regular NavigationStack for iPhone
-                if UIDevice.current.userInterfaceIdiom == .pad {
-                    NavigationSplitView(columnVisibility: $columnVisibility) {
-                        SessionSidebarView()
-                    } detail: {
-                        TerminalDetailView(columnVisibility: $columnVisibility)
-                    }
-                } else {
-                    NavigationStack {
-                        SessionCompactView()
-                    }
-                }
-            } else if connectionManager.isConnected && !connectionManager.authRequired {
-                // Connected but no auth required
                 if UIDevice.current.userInterfaceIdiom == .pad {
                     NavigationSplitView(columnVisibility: $columnVisibility) {
                         SessionSidebarView()
@@ -261,16 +260,6 @@ struct TerminalDetailView: View {
         themeManager.terminalOverlayColor
     }
 
-    // Dynamic sheet height based on session count
-    private var sessionSheetDetents: Set<PresentationDetent> {
-        let count = connectionManager.sessions.count
-        let baseHeight: CGFloat = 150
-        let rowHeight: CGFloat = 80
-        let calculatedHeight = baseHeight + (CGFloat(count) * rowHeight)
-        let maxHeight: CGFloat = 650
-        return [.height(min(calculatedHeight, maxHeight)), .large]
-    }
-
     var body: some View {
         ZStack {
             Color(uiColor: themeManager.currentTheme.backgroundColor).ignoresSafeArea()
@@ -338,7 +327,7 @@ struct TerminalDetailView: View {
         }
         .sheet(isPresented: $showingSessionList) {
             SessionListSheet()
-                .presentationDetents(sessionSheetDetents)
+                .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingSettings) {
@@ -379,20 +368,6 @@ struct SessionCompactView: View {
     // Icon color adapts to terminal background (white for dark themes, black for light)
     private var iconColor: Color {
         themeManager.terminalOverlayColor
-    }
-
-    // Dynamic sheet height based on session count
-    private var sessionSheetDetents: Set<PresentationDetent> {
-        let count = connectionManager.sessions.count
-        // Header ~70, section header ~50, each row ~80, bottom padding ~30
-        let baseHeight: CGFloat = 150
-        let rowHeight: CGFloat = 80
-        let calculatedHeight = baseHeight + (CGFloat(count) * rowHeight)
-
-        // Always fit all sessions without scrolling (up to ~6 sessions)
-        // Beyond that, cap at 650 and allow expanding to large
-        let maxHeight: CGFloat = 650
-        return [.height(min(calculatedHeight, maxHeight)), .large]
     }
 
     var body: some View {
@@ -469,7 +444,7 @@ struct SessionCompactView: View {
         .navigationBarHidden(true)
         .sheet(isPresented: $showingSessionList) {
             SessionListSheet()
-                .presentationDetents(sessionSheetDetents)
+                .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingSettings) {
