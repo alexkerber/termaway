@@ -846,15 +846,6 @@ struct ConnectView: View {
     }
 }
 
-// MARK: - Connection Status (Dynamic - uses EnvironmentObject)
-struct ConnectionStatusView: View {
-    @EnvironmentObject var connectionManager: ConnectionManager
-
-    var body: some View {
-        ConnectionStatusPill(isConnected: connectionManager.isConnected)
-    }
-}
-
 #Preview {
     ContentView()
         .environmentObject(ConnectionManager())

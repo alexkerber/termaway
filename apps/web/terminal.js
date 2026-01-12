@@ -1,14 +1,12 @@
 // xterm.js and addons are loaded via script tags as globals
 const { Terminal } = window;
 const { FitAddon } = window.FitAddon;
-const { WebglAddon } = window.WebglAddon;
 const { WebLinksAddon } = window.WebLinksAddon;
 
 // State
 let ws = null;
 let term = null;
 let fitAddon = null;
-let webglAddon = null;
 let currentSession = null;
 let sessions = [];
 let reconnectAttempts = 0;
@@ -102,11 +100,6 @@ const lightTheme = {
   brightWhite: "#8c959f",
 };
 
-// WebGL disabled - canvas renderer handles theme changes better
-function loadWebGL() {
-  // Intentionally empty - using canvas renderer for reliable theming
-}
-
 // Initialize terminal
 function initTerminal() {
   term = new Terminal({
@@ -123,9 +116,6 @@ function initTerminal() {
 
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
-
-  // WebGL addon for GPU accelerated rendering
-  loadWebGL();
 
   // Web links addon for clickable URLs
   try {

@@ -174,14 +174,6 @@ struct GlassSettingsButton: View {
     }
 }
 
-// MARK: - View Extension for adaptive icon color
-extension View {
-    /// Returns white for dark backgrounds, black for light backgrounds
-    func adaptiveIconColor(for theme: ThemeManager) -> Color {
-        theme.terminalOverlayColor
-    }
-}
-
 // MARK: - Glass Effect Container Wrapper
 /// Wraps content in GlassEffectContainer on iOS 26, passes through on older versions
 struct AdaptiveGlassContainer<Content: View>: View {

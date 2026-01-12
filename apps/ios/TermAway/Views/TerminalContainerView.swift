@@ -539,7 +539,3 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         }
     }
 }
-
-extension Notification.Name {
-    static let terminalOutput = Notification.Name("terminalOutput")
-}
