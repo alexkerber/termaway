@@ -463,30 +463,11 @@ struct TerminalViewRepresentable: UIViewRepresentable {
             // This is called for any output that arrives after consumePendingScrollback() runs.
             Task { @MainActor in
                 connectionManager.onTerminalOutput = { [weak self] data in
+                    // Just feed the data - let SwiftTerm handle scroll position naturally
+                    // SwiftTerm keeps the cursor visible automatically
                     self?.terminalView?.feed(text: data)
-                    // Only auto-scroll if user is already near the bottom
-                    // This prevents jumping when user has scrolled up to read
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        self?.scrollToBottomIfNeeded()
-                    }
                 }
             }
-        }
-
-        /// Check if user is near the bottom of the terminal
-        private func isNearBottom() -> Bool {
-            guard let tv = terminalView else { return true }
-            let contentHeight = tv.contentSize.height
-            let frameHeight = tv.bounds.height
-            let offsetY = tv.contentOffset.y
-            let maxOffset = max(0, contentHeight - frameHeight)
-            // Consider "near bottom" if within 100 points
-            return offsetY >= maxOffset - 100
-        }
-
-        private func scrollToBottomIfNeeded() {
-            guard isNearBottom() else { return }
-            scrollToBottom()
         }
 
         private func scrollToBottom() {

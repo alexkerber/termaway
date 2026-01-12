@@ -2,12 +2,31 @@ import express from "express";
 import { createServer as createHttpServer } from "http";
 import { createServer as createHttpsServer } from "https";
 import { readFileSync, existsSync } from "fs";
+import { timingSafeEqual } from "crypto";
 import { WebSocketServer } from "ws";
 import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
 import { Bonjour } from "bonjour-service";
 import SessionManager from "./sessionManager.js";
+
+// Timing-safe password comparison to prevent timing attacks
+function safeCompare(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    // Compare against self to maintain constant time even on length mismatch
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
+// Rate limiting for authentication attempts
+const authAttempts = new Map(); // IP -> { count, firstAttempt }
+const MAX_AUTH_ATTEMPTS = 5;
+const AUTH_WINDOW_MS = 60000; // 1 minute window
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -263,7 +282,35 @@ function handleAuth(ws, password) {
     return;
   }
 
-  if (password === PASSWORD) {
+  // Rate limiting check
+  const now = Date.now();
+  const attempts = authAttempts.get(clientIP) || {
+    count: 0,
+    firstAttempt: now,
+  };
+
+  // Reset if window has passed
+  if (now - attempts.firstAttempt > AUTH_WINDOW_MS) {
+    attempts.count = 0;
+    attempts.firstAttempt = now;
+  }
+
+  if (attempts.count >= MAX_AUTH_ATTEMPTS) {
+    const remainingMs = AUTH_WINDOW_MS - (now - attempts.firstAttempt);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    console.log(`Rate limited auth attempt from ${clientIP}`);
+    ws.send(
+      JSON.stringify({
+        type: "auth-failed",
+        message: `Too many attempts. Try again in ${remainingSec}s`,
+      }),
+    );
+    return;
+  }
+
+  if (safeCompare(password, PASSWORD)) {
+    // Success - clear rate limit for this IP
+    authAttempts.delete(clientIP);
     wsAuthMap.set(ws, true);
     console.log("Client authenticated successfully");
     ws.send(JSON.stringify({ type: "auth-success" }));
@@ -271,7 +318,12 @@ function handleAuth(ws, password) {
       broadcastClientEvent("client-connected", clientIP);
     }
   } else {
-    console.log("Client authentication failed");
+    // Failed - increment rate limit counter
+    attempts.count++;
+    authAttempts.set(clientIP, attempts);
+    console.log(
+      `Client authentication failed (attempt ${attempts.count}/${MAX_AUTH_ATTEMPTS})`,
+    );
     ws.send(
       JSON.stringify({ type: "auth-failed", message: "Invalid password" }),
     );

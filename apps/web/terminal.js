@@ -233,21 +233,25 @@ function smoothScrollToBottom() {
   requestAnimationFrame(animate);
 }
 
-// Update scroll button visibility based on scroll position
-function updateScrollButton() {
-  if (!term || !scrollToBottomBtn) return;
-
+// Check if viewport is near the bottom
+function isNearBottom() {
+  if (!term) return true;
   const viewport = term.element?.querySelector(".xterm-viewport");
-  if (!viewport) return;
+  if (!viewport) return true;
 
   const scrollTop = viewport.scrollTop;
   const scrollHeight = viewport.scrollHeight;
   const clientHeight = viewport.clientHeight;
 
   // At bottom if within 50px of the end
-  const isAtBottom = scrollTop >= scrollHeight - clientHeight - 50;
+  return scrollTop >= scrollHeight - clientHeight - 50;
+}
 
-  if (isAtBottom) {
+// Update scroll button visibility based on scroll position
+function updateScrollButton() {
+  if (!term || !scrollToBottomBtn) return;
+
+  if (isNearBottom()) {
     scrollToBottomBtn.classList.add("scroll-hidden");
   } else {
     scrollToBottomBtn.classList.remove("scroll-hidden");
@@ -372,7 +376,7 @@ function handleMessage(msg) {
       authRequired = msg.required;
       if (msg.required) {
         // Check if we have a saved password
-        const savedPassword = localStorage.getItem("serverPassword");
+        const savedPassword = sessionStorage.getItem("serverPassword");
         if (savedPassword) {
           ws.send(JSON.stringify({ type: "auth", password: savedPassword }));
         } else {
@@ -393,15 +397,22 @@ function handleMessage(msg) {
 
     case "auth-failed":
       isAuthenticated = false;
-      localStorage.removeItem("serverPassword");
+      sessionStorage.removeItem("serverPassword");
       showAuthModal(msg.message || "Invalid password");
       break;
 
     case "output":
       if (term) {
+        // Check scroll position before write
+        const wasAtBottom = isNearBottom();
         term.write(msg.data);
-        // Scroll to bottom after write renders
-        requestAnimationFrame(() => term.scrollToBottom());
+        // Only auto-scroll if user was already at bottom
+        if (wasAtBottom) {
+          requestAnimationFrame(() => term.scrollToBottom());
+        } else {
+          // Show scroll button when new content arrives while scrolled up
+          requestAnimationFrame(() => updateScrollButton());
+        }
       }
       break;
 
@@ -520,7 +531,7 @@ function showAuthModal(errorMessage) {
   }
 
   modalCallback = (password) => {
-    localStorage.setItem("serverPassword", password);
+    sessionStorage.setItem("serverPassword", password);
     ws.send(JSON.stringify({ type: "auth", password }));
   };
 
