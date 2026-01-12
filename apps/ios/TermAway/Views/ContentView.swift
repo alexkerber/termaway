@@ -142,47 +142,45 @@ struct SessionRowView: View {
     }
 
     var body: some View {
-        Button(action: {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.name)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(session.clientCount > 0 ? Color.green : Color.gray.opacity(0.5))
+                        .frame(width: 6, height: 6)
+
+                    Text(session.clientCount > 0 ? "Active" : "Idle")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if session.clientCount > 1 {
+                        Text("• \(session.clientCount) clients")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            if isActive {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.title3)
+            }
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture {
             // Only attach if not already active
             if !isActive {
                 connectionManager.attachToSession(session.name)
             }
-        }) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(session.clientCount > 0 ? Color.green : Color.gray.opacity(0.5))
-                            .frame(width: 6, height: 6)
-
-                        Text(session.clientCount > 0 ? "Active" : "Idle")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        if session.clientCount > 1 {
-                            Text("• \(session.clientCount) clients")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                Spacer()
-
-                if isActive {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                }
-            }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button {
                 showingDeleteConfirmation = true
