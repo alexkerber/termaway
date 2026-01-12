@@ -142,3 +142,11 @@ When creating a new release:
    # Create GitHub release
    gh release create v{version} builds/TermAway-macOS-v{version}.zip
    ```
+
+4. **Deploy website:**
+
+   ```bash
+   ./scripts/deploy-website.sh
+   ```
+
+   Syncs the `website/` folder to production via rsync over SSH.
