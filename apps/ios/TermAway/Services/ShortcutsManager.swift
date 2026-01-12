@@ -48,9 +48,26 @@ class ShortcutsManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: shortcutsKey),
            let decoded = try? JSONDecoder().decode([Shortcut].self, from: data) {
             shortcuts = decoded
+            // Migrate: add any new default shortcuts that don't exist
+            addMissingDefaults()
         } else {
             // First launch - use defaults
             shortcuts = Shortcut.defaults
+            saveShortcuts()
+        }
+    }
+
+    /// Add any new default shortcuts that were added in updates
+    private func addMissingDefaults() {
+        let existingNames = Set(shortcuts.map { $0.name })
+        var added = false
+        for defaultShortcut in Shortcut.defaults {
+            if !existingNames.contains(defaultShortcut.name) {
+                shortcuts.append(defaultShortcut)
+                added = true
+            }
+        }
+        if added {
             saveShortcuts()
         }
     }

@@ -31,6 +31,8 @@ struct Shortcut: Identifiable, Codable, Equatable {
             Shortcut(name: "Up Arrow", command: "\u{1B}[A", displayLabel: "\u{2191}"),
             Shortcut(name: "Down Arrow", command: "\u{1B}[B", displayLabel: "\u{2193}"),
             Shortcut(name: "Ctrl+C", command: controlChar("C"), displayLabel: "^C"),
+            Shortcut(name: "Ctrl+R", command: controlChar("R"), displayLabel: "^R"),
+            Shortcut(name: "Ctrl+L", command: controlChar("L"), displayLabel: "^L"),
             Shortcut(name: "Ctrl+D", command: controlChar("D"), displayLabel: "^D"),
             Shortcut(name: "Ctrl+Z", command: controlChar("Z"), displayLabel: "^Z"),
             Shortcut(name: "Escape", command: "\u{1B}", displayLabel: "Esc"),
