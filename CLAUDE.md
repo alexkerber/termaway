@@ -130,23 +130,52 @@ When creating a new release:
    - macOS zip: `TermAway-macOS-v{version}.zip` (e.g., `TermAway-macOS-v1.1.2.zip`)
    - Save to: `builds/TermAway-macOS-v{version}.zip`
 
-3. **Release commands:**
+3. **Build and notarize macOS app:**
 
    ```bash
-   # Build macOS app
-   cd apps/macos && xcodebuild -scheme TermAway -configuration Release archive
+   # Build archive
+   cd apps/macos && xcodebuild -scheme TermAway -configuration Release \
+     -archivePath /tmp/TermAway.xcarchive archive
 
-   # Create zip with correct name
-   zip -r builds/TermAway-macOS-v{version}.zip TermAway.app
+   # Copy app from archive
+   cp -R /tmp/TermAway.xcarchive/Products/Applications/TermAway.app /tmp/
 
-   # Create GitHub release
+   # Create zip for notarization
+   cd /tmp && zip -r TermAway-notarize.zip TermAway.app
+
+   # Submit for notarization (uses stored keychain credentials)
+   xcrun notarytool submit TermAway-notarize.zip --keychain-profile "notarytool" --wait
+
+   # Staple the notarization ticket
+   xcrun stapler staple /tmp/TermAway.app
+
+   # Create final zip
+   cd /tmp && zip -r TermAway-macOS-v{version}.zip TermAway.app
+   mv TermAway-macOS-v{version}.zip /path/to/termaway/builds/
+   ```
+
+4. **Create GitHub release:**
+
+   ```bash
    gh release create v{version} builds/TermAway-macOS-v{version}.zip
    ```
 
-4. **Deploy website:**
+5. **Deploy website:**
 
    ```bash
    ./scripts/deploy-website.sh
    ```
 
    Syncs the `website/` folder to production via rsync over SSH.
+
+### Notarization Setup (one-time)
+
+If the keychain profile is missing, set it up:
+
+```bash
+xcrun notarytool store-credentials "notarytool" \
+  --apple-id "alex@alexkerber.com" \
+  --team-id "3KFU9JQ5LH"
+```
+
+Enter an app-specific password from appleid.apple.com → Security → App-Specific Passwords.
