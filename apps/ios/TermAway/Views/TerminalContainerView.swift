@@ -470,6 +470,14 @@ struct TerminalViewRepresentable: UIViewRepresentable {
             }
         }
 
+        deinit {
+            // Clear callback to prevent calling deallocated coordinator
+            let cm = connectionManager
+            Task { @MainActor in
+                cm.onTerminalOutput = nil
+            }
+        }
+
         private func scrollToBottom() {
             guard let tv = terminalView else { return }
             let bottomOffset = CGPoint(x: 0, y: max(tv.contentSize.height - tv.bounds.height, 0))

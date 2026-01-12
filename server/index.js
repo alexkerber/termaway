@@ -611,7 +611,22 @@ function handleDetach(ws) {
 /**
  * Set clipboard content
  */
+const MAX_CLIPBOARD_SIZE = 1024 * 1024; // 1MB limit
+
 function handleClipboardSet(ws, content) {
+  if (typeof content !== "string") {
+    ws.send(
+      JSON.stringify({ type: "error", message: "Invalid clipboard content" }),
+    );
+    return;
+  }
+  if (content.length > MAX_CLIPBOARD_SIZE) {
+    ws.send(
+      JSON.stringify({ type: "error", message: "Clipboard content too large" }),
+    );
+    return;
+  }
+
   sessionManager.setClipboard(content);
   // Broadcast to all other connected clients
   const message = JSON.stringify({ type: "clipboard-update", content });
@@ -754,6 +769,9 @@ server.listen(PORT, HOST, () => {
 // Graceful shutdown
 process.on("SIGINT", () => {
   console.log("\nShutting down...");
+
+  // Stop heartbeat
+  clearInterval(heartbeatInterval);
 
   // Unpublish Bonjour service
   if (bonjourService) {
