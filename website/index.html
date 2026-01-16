@@ -695,6 +695,113 @@
             font-size: 0.9rem;
         }
 
+        /* How It Works Section */
+        .how-it-works {
+            padding: 120px 0;
+        }
+
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+            margin-top: 60px;
+        }
+
+        .step-card {
+            text-align: center;
+            position: relative;
+        }
+
+        .step-number {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #FFB627, #FF6B35);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .step-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .step-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .step-link {
+            display: inline-block;
+            margin-top: 16px;
+            color: var(--accent-orange);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .step-link:hover {
+            text-decoration: underline;
+        }
+
+        .step-link-soon {
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        .step-link-soon:hover {
+            text-decoration: none;
+        }
+
+        /* Connector lines between steps */
+        .step-card:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 26px;
+            left: calc(50% + 40px);
+            width: calc(100% - 80px);
+            height: 2px;
+            background: var(--border-glass);
+        }
+
+        @media (max-width: 1024px) {
+            .steps-grid {
+                grid-template-columns: 1fr;
+                gap: 48px;
+                max-width: 400px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .step-card:not(:last-child)::after {
+                display: none;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .how-it-works {
+                padding: 60px 0;
+            }
+
+            .steps-grid {
+                margin-top: 32px;
+                gap: 40px;
+            }
+
+            .step-number {
+                width: 48px;
+                height: 48px;
+                font-size: 1.25rem;
+            }
+        }
+
         /* Download Section */
         .download {
             padding: 120px 0;
@@ -1101,7 +1208,7 @@
             </button>
             <div class="nav-links">
                 <a href="#features">Features</a>
-                <a href="#use-cases">Why?</a>
+                <a href="#how-it-works">How it works</a>
                 <a href="#download">Download</a>
                 <a href="https://github.com/alexkerber/termaway" target="_blank">GitHub</a>
                 <button class="theme-toggle" aria-label="Toggle theme">
@@ -1278,6 +1385,38 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <h2>Up and running in minutes</h2>
+                <p>Get your Mac terminal on your iPad or iPhone in three easy steps</p>
+            </div>
+            <div class="steps-grid">
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <h3>Install on your Mac</h3>
+                    <p>Download the macOS menu bar app. It runs a lightweight server that your devices can connect to.</p>
+                    <a href="#" class="step-link download-link-macos">Download for macOS</a>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <h3>Get the iOS app</h3>
+                    <p>Install TermAway on your iPad or iPhone. It automatically finds your Mac on the network.</p>
+                    <!-- <a href="#" class="step-link">Download on App Store</a> -->
+                    <span class="step-link step-link-soon">Coming soon to App Store</span>
+                </div>
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <h3>Start coding</h3>
+                    <p>Open a session and you're in. Full terminal access with multiple tabs, just like on your Mac.</p>
+                </div>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 48px; text-align: center;">
+                In a hurry? You can also connect via any browser at <code style="background: var(--bg-glass); padding: 4px 8px; border-radius: 4px;">http://your-mac-ip:3000</code> — but the native apps offer a smoother, more stable experience.
+            </p>
         </div>
     </section>
 
