@@ -1,0 +1,140 @@
+---
+
+---
+
+<footer>
+    <div class="container">
+        <div class="footer-content">
+            <div class="footer-left">
+                <a href="/" class="logo">
+                    <img src="/assets/logotype.svg" alt="TermAway Logo" class="logo-icon logo-dark">
+                    <img src="/assets/logotype-light.svg" alt="TermAway Logo" class="logo-icon logo-light">
+                    <span>TermAway</span>
+                </a>
+                <div class="footer-links">
+                    <a href="https://github.com/alexkerber/termaway" target="_blank">GitHub</a>
+                    <a href="https://github.com/alexkerber/termaway/issues" target="_blank">Issues</a>
+                    <a href="https://github.com/alexkerber/termaway#readme" target="_blank">Docs</a>
+                    <a href="/policy">Privacy</a>
+                </div>
+            </div>
+            <div class="footer-right">
+                <span class="footer-meta">Open Source · MIT License</span>
+                <span>Made by <a href="https://alexkerber.com" target="_blank">Alex Kerber</a></span>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<style>
+    footer {
+        padding: 60px 0;
+        border-top: 1px solid var(--border-glass);
+    }
+
+    .footer-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .footer-left {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+    }
+
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+    }
+
+    .logo img.logo-icon {
+        height: 24px;
+        width: auto;
+    }
+
+    .logo .logo-dark { display: block; }
+    .logo .logo-light { display: none; }
+
+    :global([data-theme="light"]) .logo .logo-dark { display: none; }
+    :global([data-theme="light"]) .logo .logo-light { display: block; }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .logo .logo-dark { display: none; }
+        :global(:root:not([data-theme])) .logo .logo-light { display: block; }
+    }
+
+    .logo span {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        color: #FEF3E2;
+    }
+
+    :global([data-theme="light"]) .logo span {
+        color: #2D2926;
+    }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .logo span {
+            color: #2D2926;
+        }
+    }
+
+    .footer-links {
+        display: flex;
+        gap: 24px;
+    }
+
+    .footer-links a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+        color: var(--text-primary);
+    }
+
+    .footer-right {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .footer-right a {
+        color: var(--accent-orange);
+        text-decoration: none;
+    }
+
+    .footer-meta {
+        font-size: 0.8rem;
+        opacity: 0.7;
+    }
+
+    @media (max-width: 640px) {
+        .footer-content {
+            flex-direction: column;
+            gap: 24px;
+            text-align: center;
+        }
+
+        .footer-left {
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .footer-right {
+            text-align: center;
+        }
+    }
+</style>

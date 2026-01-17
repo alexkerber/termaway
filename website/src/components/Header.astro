@@ -1,0 +1,189 @@
+---
+interface Props {
+  showNavLinks?: boolean;
+}
+
+const { showNavLinks = true } = Astro.props;
+---
+
+<nav>
+    <div class="container">
+        <a href="/" class="logo">
+            <img src="/assets/logotype.svg" alt="TermAway Logo" class="logo-icon logo-dark">
+            <img src="/assets/logotype-light.svg" alt="TermAway Logo" class="logo-icon logo-light">
+            <span>TermAway</span>
+        </a>
+        <!-- Mobile theme toggle -->
+        <button class="theme-toggle theme-toggle-mobile" aria-label="Toggle theme">
+            <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+        </button>
+        {showNavLinks && (
+            <div class="nav-links">
+                <a href="/#features">Features</a>
+                <a href="/#how-it-works">How it works</a>
+                <a href="/#download">Download</a>
+                <a href="https://github.com/alexkerber/termaway" target="_blank">GitHub</a>
+                <button class="theme-toggle" aria-label="Toggle theme">
+                    <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        )}
+    </div>
+</nav>
+
+<style>
+    nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        padding: 20px 0;
+        background: var(--nav-bg);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--border-glass);
+    }
+
+    nav .container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+    }
+
+    .logo img.logo-icon {
+        height: 24px;
+        width: auto;
+    }
+
+    .logo .logo-dark { display: block; }
+    .logo .logo-light { display: none; }
+
+    :global([data-theme="light"]) .logo .logo-dark { display: none; }
+    :global([data-theme="light"]) .logo .logo-light { display: block; }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .logo .logo-dark { display: none; }
+        :global(:root:not([data-theme])) .logo .logo-light { display: block; }
+    }
+
+    .logo span {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        color: #FEF3E2;
+    }
+
+    :global([data-theme="light"]) .logo span {
+        color: #2D2926;
+    }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .logo span {
+            color: #2D2926;
+        }
+    }
+
+    .nav-links {
+        display: flex;
+        gap: 32px;
+        align-items: center;
+    }
+
+    .nav-links a {
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.95rem;
+        font-weight: 500;
+        transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+        color: var(--text-primary);
+    }
+
+    .theme-toggle {
+        background: var(--bg-glass);
+        border: 1px solid var(--border-glass);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--text-primary);
+        transition: all 0.3s;
+        position: relative;
+    }
+
+    .theme-toggle:hover {
+        background: var(--bg-card);
+        border-color: var(--accent-orange);
+    }
+
+    .theme-toggle .icon-sun,
+    .theme-toggle .icon-moon {
+        transition: opacity 0.3s, transform 0.3s;
+        position: absolute;
+    }
+
+    .theme-toggle .icon-sun { opacity: 1; }
+    .theme-toggle .icon-moon { opacity: 0; }
+
+    :global([data-theme="light"]) .theme-toggle .icon-sun { opacity: 0; }
+    :global([data-theme="light"]) .theme-toggle .icon-moon { opacity: 1; }
+
+    .theme-toggle-mobile {
+        display: none;
+    }
+
+    @media (max-width: 640px) {
+        nav .container {
+            justify-content: space-between;
+        }
+
+        .nav-links {
+            display: none;
+        }
+
+        .theme-toggle-mobile {
+            display: flex;
+        }
+    }
+</style>

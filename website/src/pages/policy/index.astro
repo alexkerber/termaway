@@ -1,0 +1,292 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+---
+
+<Layout
+    title="Privacy Policy - TermAway"
+    description="Privacy Policy for TermAway - Your Mac terminal on your iPad and iPhone. Learn how we protect your privacy."
+    ogUrl="https://termaway.app/policy"
+>
+    <Header />
+
+    <section class="policy-page">
+        <div class="container">
+            <div class="policy-header">
+                <h1>Privacy Policy</h1>
+                <p class="last-updated">Last updated: 16 January 2026</p>
+            </div>
+
+            <div class="policy-content">
+                <h2>Introduction</h2>
+                <p>
+                    TermAway ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our applications.
+                </p>
+                <p>
+                    <span class="platform-badge">macOS</span>
+                    <span class="platform-badge">iOS</span>
+                    <span class="platform-badge">iPadOS</span>
+                </p>
+                <p>
+                    TermAway is designed with privacy as a core principle. The application operates entirely on your local network and does not transmit data to external servers.
+                </p>
+
+                <h2>Information We Do Not Collect</h2>
+                <p>
+                    TermAway is built with a <strong>privacy-first architecture</strong>. We do not collect, store, or transmit:
+                </p>
+                <ul>
+                    <li>Personal identification information</li>
+                    <li>Terminal commands or output</li>
+                    <li>Session data or browsing history</li>
+                    <li>Location data</li>
+                    <li>Device identifiers</li>
+                    <li>Usage analytics within the app</li>
+                </ul>
+
+                <h2>How TermAway Works</h2>
+                <h3>Local Network Only</h3>
+                <p>
+                    TermAway operates exclusively on your local network (LAN). Your terminal sessions are transmitted directly between your devices over your home or office network. <strong>No data ever leaves your network or passes through our servers.</strong>
+                </p>
+
+                <h3>macOS Server Application</h3>
+                <p>
+                    The macOS menu bar application runs a local WebSocket server on your Mac. This server:
+                </p>
+                <ul>
+                    <li>Listens only on your local network interface</li>
+                    <li>Creates pseudo-terminal (PTY) sessions for your shell</li>
+                    <li>Maintains session data only in local memory</li>
+                    <li>Does not log or store any command history beyond your shell's own history</li>
+                </ul>
+
+                <h3>iOS and iPadOS Client Application</h3>
+                <p>
+                    The iOS/iPadOS application connects to your Mac over your local network. It:
+                </p>
+                <ul>
+                    <li>Uses Bonjour/mDNS for automatic server discovery on your network</li>
+                    <li>Stores server connection details locally on your device</li>
+                    <li>Does not transmit any data to external servers</li>
+                    <li>Does not access or require cloud services</li>
+                </ul>
+
+                <h2>Data Storage</h2>
+                <h3>On Your Mac</h3>
+                <p>
+                    The macOS application may store:
+                </p>
+                <ul>
+                    <li>Application preferences (window position, settings)</li>
+                    <li>Server configuration (port number, authentication settings)</li>
+                </ul>
+                <p>
+                    This data is stored locally in the application's sandbox and is not transmitted anywhere.
+                </p>
+
+                <h3>On Your iOS/iPadOS Device</h3>
+                <p>
+                    The iOS/iPadOS application may store:
+                </p>
+                <ul>
+                    <li>Server connection details (IP addresses, ports)</li>
+                    <li>Application preferences (theme, font size)</li>
+                    <li>Session names and organisation</li>
+                </ul>
+                <p>
+                    This data is stored locally on your device and protected by iOS security measures.
+                </p>
+
+                <h2>Website Analytics</h2>
+                <p>
+                    Our website (termaway.app) uses Google Analytics to understand how visitors interact with our marketing site. This is <strong>separate from the TermAway applications</strong>, which do not contain any analytics.
+                </p>
+                <p>
+                    The website analytics may collect:
+                </p>
+                <ul>
+                    <li>Pages visited and time spent</li>
+                    <li>Referring websites</li>
+                    <li>General geographic location (country/region)</li>
+                    <li>Browser and device type</li>
+                </ul>
+                <p>
+                    You can opt out of website analytics by using browser extensions that block Google Analytics, or by enabling "Do Not Track" in your browser.
+                </p>
+
+                <h2>Third-Party Services</h2>
+                <p>
+                    The TermAway applications do not integrate with or send data to any third-party services. The applications function entirely offline and on your local network.
+                </p>
+
+                <h2>Security</h2>
+                <p>
+                    We take the security of your terminal sessions seriously:
+                </p>
+                <ul>
+                    <li><strong>Local network only:</strong> Data never traverses the public internet</li>
+                    <li><strong>Optional authentication:</strong> Password protection for server access</li>
+                    <li><strong>No cloud dependency:</strong> Your data remains under your control</li>
+                    <li><strong>Open source:</strong> The application code is available for review on GitHub</li>
+                </ul>
+
+                <h2>Children's Privacy</h2>
+                <p>
+                    TermAway is not directed at children under the age of 13. We do not knowingly collect personal information from children. As TermAway does not collect any personal information, this policy applies equally to users of all ages.
+                </p>
+
+                <h2>Changes to This Policy</h2>
+                <p>
+                    We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date.
+                </p>
+
+                <h2>Open Source</h2>
+                <p>
+                    TermAway is open source software released under the MIT Licence. You can review the complete source code on <a href="https://github.com/alexkerber/termaway" target="_blank">GitHub</a> to verify our privacy practices.
+                </p>
+
+                <h2>Contact Us</h2>
+                <p>
+                    If you have any questions about this Privacy Policy, please contact us:
+                </p>
+                <ul>
+                    <li>By opening an issue on <a href="https://github.com/alexkerber/termaway/issues" target="_blank">GitHub</a></li>
+                    <li>By visiting our website at <a href="https://termaway.app">termaway.app</a></li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <Footer />
+</Layout>
+
+<style>
+    .policy-page {
+        padding: 140px 0 80px;
+        min-height: 100vh;
+    }
+
+    .policy-page .container {
+        max-width: 800px;
+    }
+
+    .policy-header {
+        margin-bottom: 48px;
+    }
+
+    .policy-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 16px;
+    }
+
+    .policy-header .last-updated {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+    }
+
+    .policy-content {
+        background: var(--bg-glass);
+        border: 1px solid var(--border-glass);
+        border-radius: 24px;
+        padding: 48px;
+        backdrop-filter: blur(10px);
+    }
+
+    .policy-content h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-top: 40px;
+        margin-bottom: 16px;
+        color: var(--text-primary);
+    }
+
+    .policy-content h2:first-child {
+        margin-top: 0;
+    }
+
+    .policy-content h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+
+    .policy-content p {
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        line-height: 1.7;
+    }
+
+    .policy-content ul {
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        padding-left: 24px;
+    }
+
+    .policy-content li {
+        margin-bottom: 8px;
+        line-height: 1.7;
+    }
+
+    .policy-content a {
+        color: var(--accent-orange);
+        text-decoration: none;
+    }
+
+    .policy-content a:hover {
+        text-decoration: underline;
+    }
+
+    .policy-content strong {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+
+    .platform-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        background: rgba(255, 182, 39, 0.1);
+        border: 1px solid rgba(255, 182, 39, 0.2);
+        border-radius: 20px;
+        font-size: 0.85rem;
+        color: #FFB627;
+        margin-right: 8px;
+        margin-bottom: 8px;
+    }
+
+    :global([data-theme="light"]) .platform-badge {
+        color: #E55A2B;
+        background: rgba(229, 90, 43, 0.1);
+        border-color: rgba(229, 90, 43, 0.2);
+    }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .platform-badge {
+            color: #E55A2B;
+            background: rgba(229, 90, 43, 0.1);
+            border-color: rgba(229, 90, 43, 0.2);
+        }
+    }
+
+    @media (max-width: 640px) {
+        .policy-page {
+            padding: 100px 0 60px;
+        }
+
+        .policy-header h1 {
+            font-size: 1.75rem;
+        }
+
+        .policy-content {
+            padding: 24px;
+        }
+
+        .policy-content h2 {
+            font-size: 1.25rem;
+        }
+    }
+</style>

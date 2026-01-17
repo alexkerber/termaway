@@ -1,0 +1,103 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  ogUrl?: string;
+}
+
+const {
+  title,
+  description = "Access your Mac's terminal from your iPad or iPhone. Perfect for coding from bed while your Mac stays connected to your displays.",
+  ogUrl = "https://termaway.app/"
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H0CYK2L312"></script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-H0CYK2L312');
+    </script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <meta name="description" content={description}>
+
+    <!-- Open Graph / Social Share -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content={ogUrl}>
+    <meta property="og:title" content={title}>
+    <meta property="og:description" content={description}>
+    <meta property="og:image" content="https://termaway.app/assets/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content={title}>
+    <meta name="twitter:description" content={description}>
+    <meta name="twitter:image" content="https://termaway.app/assets/og-image.png">
+
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="/manifest.json">
+
+    <!-- Apple Web App -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TermAway">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+
+    <link rel="icon" type="image/png" href="/assets/favicon-dark.png" media="(prefers-color-scheme: dark)">
+    <link rel="icon" type="image/png" href="/assets/favicon-light.png" media="(prefers-color-scheme: light)">
+    <link rel="icon" type="image/png" href="/assets/favicon-light.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+
+    <slot />
+
+    <script is:inline>
+        // Theme toggle functionality
+        const themeToggles = document.querySelectorAll('.theme-toggle');
+        const root = document.documentElement;
+
+        function getPreferredTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved) return saved;
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+
+        function setTheme(theme) {
+            root.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        }
+
+        setTheme(getPreferredTheme());
+
+        themeToggles.forEach(toggle => {
+            toggle.addEventListener('click', () => {
+                const current = root.getAttribute('data-theme');
+                setTheme(current === 'light' ? 'dark' : 'light');
+            });
+        });
+
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                setTheme(e.matches ? 'light' : 'dark');
+            }
+        });
+    </script>
+</body>
+</html>

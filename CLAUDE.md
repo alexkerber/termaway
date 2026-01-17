@@ -25,8 +25,13 @@ termaway/
 │   ├── macos/        # macOS menu bar app (AppKit)
 │   └── web/          # Web terminal client (xterm.js)
 ├── server/           # Node.js WebSocket server
-├── website/          # Marketing site (termaway.app)
-│   └── assets/       # Images, icons
+├── website/          # Marketing site (Astro, termaway.app)
+│   ├── src/
+│   │   ├── components/   # Header, Footer
+│   │   ├── layouts/      # Base layout
+│   │   ├── pages/        # index, policy
+│   │   └── styles/       # Global CSS
+│   └── public/assets/    # Images, icons
 ├── builds/           # Build outputs (.app, .zip)
 └── docs/             # Documentation
 ```
@@ -64,7 +69,9 @@ This is a web-based terminal application that provides remote terminal access ov
 
 ### Website
 
-- **website/**: Marketing site at termaway.app
+- **website/**: Marketing site at termaway.app, built with Astro
+- Shared components: Header, Footer, Layout
+- Auto-deploys via Vercel on push to main
 
 ### WebSocket Protocol
 
@@ -122,9 +129,9 @@ Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
 
 When creating a new release:
 
-1. **Version locations to update:**
+1. **Version location to update:**
    - `apps/macos/TermAway/Info.plist` - CFBundleShortVersionString and CFBundleVersion
-   - `website/index.html` - APP_VERSION constant at top of file
+   - Website auto-fetches version from GitHub releases API
 
 2. **Asset naming convention (IMPORTANT):**
    - macOS zip: `TermAway-macOS-v{version}.zip` (e.g., `TermAway-macOS-v1.1.2.zip`)
