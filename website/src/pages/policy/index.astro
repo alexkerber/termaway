@@ -289,4 +289,15 @@ import Footer from '../../components/Footer.astro';
             font-size: 1.25rem;
         }
     }
+
+    /* Light mode shadow for policy card */
+    :global([data-theme="light"]) .policy-content {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .policy-content {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+    }
 </style>
