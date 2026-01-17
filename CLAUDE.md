@@ -160,13 +160,7 @@ When creating a new release:
    gh release create v{version} builds/TermAway-macOS-v{version}.zip
    ```
 
-5. **Deploy website:**
-
-   ```bash
-   ./scripts/deploy-website.sh
-   ```
-
-   Syncs the `website/` folder to production via rsync over SSH.
+Website deploys automatically via Vercel on push to main.
 
 ### Notarization Setup (one-time)
 
