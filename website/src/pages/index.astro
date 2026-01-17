@@ -993,4 +993,69 @@ import Footer from '../components/Footer.astro';
             padding: 24px;
         }
     }
+
+    /* Light mode card shadows */
+    :global([data-theme="light"]) .feature-card,
+    :global([data-theme="light"]) .use-case-card,
+    :global([data-theme="light"]) .download-card,
+    :global([data-theme="light"]) .emoji-card {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    :global([data-theme="light"]) .feature-card:hover {
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+    }
+
+    :global([data-theme="light"]) .device-mockup {
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    }
+
+    :global([data-theme="light"]) .feature-icon {
+        background: rgba(229, 90, 43, 0.1);
+    }
+
+    :global([data-theme="light"]) .feature-icon svg {
+        stroke: #e55a2b;
+    }
+
+    :global([data-theme="light"]) .emoji-card .emoji svg {
+        stroke: #e55a2b;
+    }
+
+    :global([data-theme="light"]) .download-card .icon svg {
+        stroke: #e55a2b;
+    }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .feature-card,
+        :global(:root:not([data-theme])) .use-case-card,
+        :global(:root:not([data-theme])) .download-card,
+        :global(:root:not([data-theme])) .emoji-card {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        :global(:root:not([data-theme])) .feature-card:hover {
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+        }
+
+        :global(:root:not([data-theme])) .device-mockup {
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        :global(:root:not([data-theme])) .feature-icon {
+            background: rgba(229, 90, 43, 0.1);
+        }
+
+        :global(:root:not([data-theme])) .feature-icon svg {
+            stroke: #e55a2b;
+        }
+
+        :global(:root:not([data-theme])) .emoji-card .emoji svg {
+            stroke: #e55a2b;
+        }
+
+        :global(:root:not([data-theme])) .download-card .icon svg {
+            stroke: #e55a2b;
+        }
+    }
 </style>
