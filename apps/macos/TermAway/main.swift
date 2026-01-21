@@ -1337,7 +1337,7 @@ struct PreferencesView: View {
             VStack(spacing: 12) {
                 LinkButton(title: "Website", icon: "globe", url: "https://termaway.app")
                 LinkButton(title: "GitHub", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/alexkerber/termaway")
-                LinkButton(title: "Twitter", icon: "at", url: "https://twitter.com/alex_kerber")
+                LinkButton(title: "Author", icon: "person", url: "https://alexkerber.com")
             }
             .padding(.top, 16)
 
