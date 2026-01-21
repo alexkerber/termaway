@@ -110,7 +110,8 @@ const heartbeatInterval = setInterval(() => {
     if (wsAliveMap.get(ws) === false) {
       // Didn't respond to last ping, terminate
       console.log("Terminating stale WebSocket connection");
-      return ws.terminate();
+      ws.terminate();
+      continue;
     }
     wsAliveMap.set(ws, false);
     ws.ping();
@@ -211,8 +212,8 @@ wss.on("connection", (ws, req) => {
   // If no password is set, auto-authenticate and broadcast
   if (!PASSWORD) {
     wsAuthMap.set(ws, true);
-    // Defer broadcast to allow client to fully connect
-    setTimeout(() => broadcastClientEvent("client-connected", clientIP), 100);
+    // Defer broadcast to next tick to ensure client setup is complete
+    setImmediate(() => broadcastClientEvent("client-connected", clientIP));
   }
 
   // Send auth requirement status
