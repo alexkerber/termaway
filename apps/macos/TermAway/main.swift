@@ -11,7 +11,7 @@ let appVersion = "1.1.4"
 // MARK: - Update Checker
 class UpdateChecker {
     static let shared = UpdateChecker()
-    private let repoOwner = "akerber"
+    private let repoOwner = "alexkerber"
     private let repoName = "termaway"
 
     struct GitHubRelease: Codable {
@@ -1336,7 +1336,7 @@ struct PreferencesView: View {
             // Links
             VStack(spacing: 12) {
                 LinkButton(title: "Website", icon: "globe", url: "https://termaway.app")
-                LinkButton(title: "GitHub", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/akerber/termaway")
+                LinkButton(title: "GitHub", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/alexkerber/termaway")
                 LinkButton(title: "Twitter", icon: "at", url: "https://twitter.com/alex_kerber")
             }
             .padding(.top, 16)
