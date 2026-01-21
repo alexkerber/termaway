@@ -1362,7 +1362,7 @@ struct PreferencesView: View {
             Spacer()
 
             // Copyright
-            Text("© 2025 Alex Kerber")
+            Text("© 2026 Alex Kerber")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .padding(.bottom, 20)
