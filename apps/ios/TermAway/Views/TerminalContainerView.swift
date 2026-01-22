@@ -35,7 +35,8 @@ struct TerminalContainerView: View {
                 TerminalViewRepresentable(
                     connectionManager: connectionManager,
                     themeManager: themeManager,
-                    terminalView: $terminalView
+                    terminalView: $terminalView,
+                    sessionName: session.name
                 )
                 .padding(.top, 44)
                 .padding(.horizontal, 8)
@@ -377,6 +378,7 @@ struct TerminalViewRepresentable: UIViewRepresentable {
     let connectionManager: ConnectionManager
     @ObservedObject var themeManager: ThemeManager
     @Binding var terminalView: TerminalView?
+    let sessionName: String  // Explicit session name to avoid race conditions
 
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
         let terminalView = TerminalView(frame: .zero)
@@ -394,9 +396,17 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         terminalView.terminalDelegate = context.coordinator
         context.coordinator.terminalView = terminalView
 
+        // Add tap gesture to ensure terminal can become first responder when tapped
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap))
+        tapGesture.cancelsTouchesInView = false
+        terminalView.addGestureRecognizer(tapGesture)
+
         // Become first responder to show keyboard
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            _ = terminalView.becomeFirstResponder()
+        print("TerminalContainerView[\(sessionName)]: scheduling auto-focus in 0.5s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak terminalView, sessionName] in
+            guard let tv = terminalView else { return }
+            let success = tv.becomeFirstResponder()
+            print("TerminalContainerView[\(sessionName)]: auto-focus becomeFirstResponder = \(success)")
         }
 
         // Store reference for toolbar
@@ -419,50 +429,33 @@ struct TerminalViewRepresentable: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(connectionManager: connectionManager)
+        Coordinator(connectionManager: connectionManager, sessionName: sessionName)
     }
 
     class Coordinator: NSObject, TerminalViewDelegate {
         var connectionManager: ConnectionManager
+        let sessionName: String  // The specific session this terminal displays
 
         /// Last known terminal size from sizeChanged callback
         private var lastCols: Int = 80
         private var lastRows: Int = 24
 
-        /// Weak reference to the terminal view.
-        /// When set, consumes any pending scrollback data that was buffered during session switch.
-        weak var terminalView: TerminalView? {
-            didSet {
-                guard let tv = terminalView else { return }
+        /// ID for this coordinator's terminal output handler
+        private var outputHandlerId: UUID?
 
-                // Consume any scrollback buffered during session switch.
-                // This must happen after the terminal is ready to display content.
-                // The server waits to send 'attached' until all scrollback is sent,
-                // ensuring pendingScrollback contains the complete session history.
-                Task { @MainActor in
-                    let pending = self.connectionManager.consumePendingScrollback()
-                    if !pending.isEmpty {
-                        tv.feed(text: pending)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                            self.scrollToBottom()
-                            // Trigger resize to fix prompt rendering
-                            if self.lastCols > 0 && self.lastRows > 0 {
-                                self.connectionManager.sendResize(cols: self.lastCols, rows: self.lastRows)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        /// Weak reference to the terminal view
+        weak var terminalView: TerminalView?
 
-        init(connectionManager: ConnectionManager) {
+        init(connectionManager: ConnectionManager, sessionName: String) {
             self.connectionManager = connectionManager
+            self.sessionName = sessionName
             super.init()
 
-            // Set up handler for live terminal output (data arriving after session is attached).
-            // This is called for any output that arrives after consumePendingScrollback() runs.
+            // Register handler for live terminal output for THIS specific session.
+            // IMPORTANT: Use explicit sessionName to avoid race conditions during session switch
+            let session = sessionName
             Task { @MainActor in
-                connectionManager.onTerminalOutput = { [weak self] data in
+                self.outputHandlerId = connectionManager.registerOutputHandler(for: session) { [weak self] data in
                     // Just feed the data - let SwiftTerm handle scroll position naturally
                     // SwiftTerm keeps the cursor visible automatically
                     self?.terminalView?.feed(text: data)
@@ -470,11 +463,41 @@ struct TerminalViewRepresentable: UIViewRepresentable {
             }
         }
 
+        /// Handle tap on terminal to become first responder
+        @objc func handleTap() {
+            guard let tv = terminalView else {
+                print("TerminalContainerView[\(sessionName)]: handleTap - terminalView is nil!")
+                return
+            }
+
+            if tv.isFirstResponder {
+                print("TerminalContainerView[\(sessionName)]: handleTap - already first responder")
+                return
+            }
+
+            print("TerminalContainerView[\(sessionName)]: handleTap - attempting becomeFirstResponder")
+            let success = tv.becomeFirstResponder()
+            print("TerminalContainerView[\(sessionName)]: handleTap - becomeFirstResponder = \(success)")
+
+            // If immediate attempt failed, try again after a brief delay
+            if !success {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak tv, sessionName = self.sessionName] in
+                    guard let tv = tv, !tv.isFirstResponder else { return }
+                    let retrySuccess = tv.becomeFirstResponder()
+                    print("TerminalContainerView[\(sessionName)]: handleTap retry - becomeFirstResponder = \(retrySuccess)")
+                }
+            }
+        }
+
         deinit {
-            // Clear callback to prevent calling deallocated coordinator
+            // Unregister handler to prevent calling deallocated coordinator
             let cm = connectionManager
+            let handlerId = outputHandlerId
+            let session = sessionName
             Task { @MainActor in
-                cm.onTerminalOutput = nil
+                if let id = handlerId {
+                    cm.unregisterOutputHandler(for: session, id: id)
+                }
             }
         }
 
@@ -487,8 +510,9 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         // Called when user types in terminal
         func send(source: TerminalView, data: ArraySlice<UInt8>) {
             let string = String(bytes: data, encoding: .utf8) ?? ""
+            let session = sessionName
             Task { @MainActor in
-                connectionManager.sendInput(string)
+                connectionManager.sendInput(string, to: session)
             }
         }
 
@@ -507,8 +531,9 @@ struct TerminalViewRepresentable: UIViewRepresentable {
             // Store for later use (e.g., triggering resize after scrollback load)
             lastCols = newCols
             lastRows = newRows
+            let session = sessionName
             Task { @MainActor in
-                connectionManager.sendResize(cols: newCols, rows: newRows)
+                connectionManager.sendResize(cols: newCols, rows: newRows, for: session)
             }
         }
 

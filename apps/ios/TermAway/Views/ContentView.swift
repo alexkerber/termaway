@@ -85,6 +85,7 @@ struct ContentView: View {
 // MARK: - Session Sidebar (iPad)
 struct SessionSidebarView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
+    @EnvironmentObject var splitPaneManager: SplitPaneManager
     @State private var showingNewSession = false
     @State private var newSessionName = ""
 
@@ -108,18 +109,20 @@ struct SessionSidebarView: View {
                         Image(systemName: "plus")
                     }
 
-                    Text("Sessions")
+                    Text("Windows")
                         .font(.headline)
                 }
             }
         }
-        .alert("New Session", isPresented: $showingNewSession) {
-            TextField("Session name", text: $newSessionName)
+        .alert("New Window", isPresented: $showingNewSession) {
+            TextField("Window name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
             Button("Create") {
                 if !newSessionName.isEmpty {
+                    // Clear any stale layout from a previous session with this name
+                    splitPaneManager.clearSavedLayout(for: newSessionName)
                     connectionManager.createSession(newSessionName)
                     connectionManager.attachToSession(newSessionName)
                     newSessionName = ""
@@ -132,11 +135,18 @@ struct SessionSidebarView: View {
 // MARK: - Session Row
 struct SessionRowView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
+    @EnvironmentObject var splitPaneManager: SplitPaneManager
     let session: Session
+    var isEditMode: Bool = false
     @State private var showingRenameAlert = false
     @State private var showingDeleteConfirmation = false
     @State private var newName = ""
 
+    private var isIPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    /// Check if this is the currently viewed window
     var isActive: Bool {
         connectionManager.currentSession?.name == session.name
     }
@@ -167,7 +177,7 @@ struct SessionRowView: View {
 
             Spacer()
 
-            if isActive {
+            if isActive && !isEditMode {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.green)
                     .font(.title3)
@@ -176,51 +186,66 @@ struct SessionRowView: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture {
-            // Only attach if not already active
-            if !isActive {
+            // Only attach if not already active and not in edit mode
+            if !isActive && !isEditMode {
+                // Attach to the session on the server
                 connectionManager.attachToSession(session.name)
+
+                // On iPad, assign session to the focused pane
+                if isIPad {
+                    splitPaneManager.attachSessionToFocused(session.name)
+                    connectionManager.setActiveSession(session.name)
+                }
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button {
-                showingDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash.fill")
-            }
-            .tint(.red)
+            if !isEditMode {
+                Button {
+                    showingDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash.fill")
+                }
+                .tint(.red)
 
-            Button {
-                newName = session.name
-                showingRenameAlert = true
-            } label: {
-                Image(systemName: "pencil.line")
+                Button {
+                    newName = session.name
+                    showingRenameAlert = true
+                } label: {
+                    Image(systemName: "pencil.line")
+                }
+                .tint(.brandOrange)
             }
-            .tint(.brandOrange)
         }
         .contextMenu {
-            Button(action: {
-                if !isActive {
-                    connectionManager.attachToSession(session.name)
+            if !isEditMode {
+                Button(action: {
+                    if !isActive {
+                        connectionManager.attachToSession(session.name)
+                        if isIPad {
+                            splitPaneManager.attachSessionToFocused(session.name)
+                            connectionManager.setActiveSession(session.name)
+                        }
+                    }
+                }) {
+                    Label("Attach", systemImage: "arrow.right.circle")
                 }
-            }) {
-                Label("Attach", systemImage: "arrow.right.circle")
-            }
-            .disabled(isActive)
+                .disabled(isActive)
 
-            Button(action: {
-                newName = session.name
-                showingRenameAlert = true
-            }) {
-                Label("Rename", systemImage: "pencil")
-            }
+                Button(action: {
+                    newName = session.name
+                    showingRenameAlert = true
+                }) {
+                    Label("Rename", systemImage: "pencil")
+                }
 
-            Button(role: .destructive, action: {
-                showingDeleteConfirmation = true
-            }) {
-                Label("Delete", systemImage: "trash")
+                Button(role: .destructive, action: {
+                    showingDeleteConfirmation = true
+                }) {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
-        .alert("Rename Session", isPresented: $showingRenameAlert) {
+        .alert("Rename Window", isPresented: $showingRenameAlert) {
             TextField("New name", text: $newName)
             Button("Cancel", role: .cancel) {
                 newName = ""
@@ -232,7 +257,7 @@ struct SessionRowView: View {
                 newName = ""
             }
         }
-        .alert("Delete Session?", isPresented: $showingDeleteConfirmation) {
+        .alert("Delete Window?", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
                 connectionManager.killSession(session.name)
@@ -247,10 +272,12 @@ struct SessionRowView: View {
 struct TerminalDetailView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var splitPaneManager: SplitPaneManager
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var showingSettings = false
     @State private var showingNewSession = false
     @State private var showingSessionList = false
+    @State private var showingSplitMenu = false
     @State private var newSessionName = ""
 
     // Icon color adapts to terminal background
@@ -262,12 +289,13 @@ struct TerminalDetailView: View {
         ZStack {
             Color(uiColor: themeManager.currentTheme.backgroundColor).ignoresSafeArea()
 
-            if let currentSession = connectionManager.currentSession {
-                TerminalContainerView(session: currentSession)
-                    .id(currentSession.name) // Force new view instance per session
+            if connectionManager.currentSession != nil {
+                // Use SplitTerminalView for split pane support
+                SplitTerminalView()
+                    .id(splitPaneManager.focusedSessionName ?? "default")
                     .navigationBarHidden(true)
 
-                // Custom top bar overlay (same as iPhone) - only when session active
+                // Custom top bar overlay - only when session active
                 VStack {
                     HStack(spacing: 10) {
                         // + button in glass circle (new session)
@@ -279,7 +307,7 @@ struct TerminalDetailView: View {
 
                         // Session name (tappable to show session list)
                         Button(action: { showingSessionList = true }) {
-                            Text(currentSession.name)
+                            Text(splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "")
                                 .font(.headline)
                                 .foregroundColor(iconColor)
                                 .lineLimit(1)
@@ -289,6 +317,9 @@ struct TerminalDetailView: View {
                         .frame(maxWidth: 150, alignment: .leading)
 
                         Spacer()
+
+                        // Split pane button (iPad only)
+                        SplitPaneMenuButton(iconColor: iconColor)
 
                         // Connected status pill (tappable to show sessions)
                         ConnectionStatusPill(action: { showingSessionList = true })
@@ -327,17 +358,20 @@ struct TerminalDetailView: View {
             SessionListSheet()
                 .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
-        .alert("New Session", isPresented: $showingNewSession) {
-            TextField("Session name", text: $newSessionName)
+        .alert("New Window", isPresented: $showingNewSession) {
+            TextField("Window name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
             Button("Create") {
                 if !newSessionName.isEmpty {
+                    // Clear any stale layout from a previous session with this name
+                    splitPaneManager.clearSavedLayout(for: newSessionName)
                     connectionManager.createSession(newSessionName)
                     connectionManager.attachToSession(newSessionName)
                     newSessionName = ""
@@ -349,8 +383,100 @@ struct TerminalDetailView: View {
                 connectionManager.attachToSession(first.name)
             }
         }
+        .onChange(of: connectionManager.currentSession?.name) { oldValue, newValue in
+            // Load the layout for this session (persisted per-session)
+            print("ContentView: Session changed from '\(oldValue ?? "nil")' to '\(newValue ?? "nil")'")
+            if let sessionName = newValue {
+                splitPaneManager.setCurrentSession(sessionName)
+            }
+        }
+        .onAppear {
+            // Set up callback for creating ephemeral sessions when restoring layouts
+            // Ephemeral sessions are auto-killed when switching windows, so we recreate them
+            splitPaneManager.onNeedCreatePaneSessions = { sessionNames in
+                print("SplitPaneManager: Recreating ephemeral sessions: \(sessionNames)")
+                for name in sessionNames {
+                    connectionManager.createPaneSession(name)
+                }
+            }
+        }
         .hideToolbarBackground()
         .preferredColorScheme(.dark) // Terminal always dark
+    }
+}
+
+// MARK: - Split Pane Menu Button
+struct SplitPaneMenuButton: View {
+    @EnvironmentObject var connectionManager: ConnectionManager
+    @EnvironmentObject var splitPaneManager: SplitPaneManager
+    let iconColor: Color
+
+    var body: some View {
+        Menu {
+            // Layout options
+            Section("Layout") {
+                ForEach(SplitLayout.allCases, id: \.self) { layout in
+                    Button(action: { changeToLayout(layout) }) {
+                        Label(
+                            layout.displayName,
+                            systemImage: layout.icon
+                        )
+                    }
+                    .disabled(splitPaneManager.layout == layout)
+                }
+            }
+
+            // Close pane option (only if multiple panes)
+            if splitPaneManager.panes.count > 1 {
+                Section {
+                    Button(role: .destructive, action: { splitPaneManager.closeFocusedPane() }) {
+                        Label("Close Focused Pane", systemImage: "xmark.rectangle")
+                    }
+
+                    Button(action: { splitPaneManager.resetToSingle() }) {
+                        Label("Merge All Panes", systemImage: "rectangle")
+                    }
+                }
+            }
+        } label: {
+            GlassCircleButton(
+                icon: splitPaneManager.layout.icon,
+                color: iconColor,
+                action: { }
+            )
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// Change layout and auto-create sessions for new panes
+    private func changeToLayout(_ layout: SplitLayout) {
+        let currentPaneCount = splitPaneManager.panes.count
+        let neededPaneCount = layout.paneCount
+        let newPanesNeeded = max(0, neededPaneCount - currentPaneCount)
+
+        // Get base session name for generating new session names
+        let baseSessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "Window"
+
+        // Create new sessions for additional panes (using dash instead of parens for server compatibility)
+        var newSessionNames: [String] = []
+        for i in 0..<newPanesNeeded {
+            let paneNumber = currentPaneCount + i + 1
+            let newName = "\(baseSessionName)-\(paneNumber)"
+            newSessionNames.append(newName)
+            // Create session but mark it as a pane session (don't switch to it)
+            connectionManager.createPaneSession(newName)
+        }
+
+        // Change the layout (creates empty panes)
+        splitPaneManager.changeLayout(to: layout)
+
+        // Assign the new sessions to the new panes
+        let newPanes = Array(splitPaneManager.panes.suffix(newPanesNeeded))
+        for (index, pane) in newPanes.enumerated() {
+            if index < newSessionNames.count {
+                splitPaneManager.attachSession(newSessionNames[index], to: pane.id)
+            }
+        }
     }
 }
 
@@ -358,6 +484,7 @@ struct TerminalDetailView: View {
 struct SessionCompactView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var splitPaneManager: SplitPaneManager
     @State private var showingNewSession = false
     @State private var newSessionName = ""
     @State private var showingSessionList = false
@@ -444,17 +571,20 @@ struct SessionCompactView: View {
             SessionListSheet()
                 .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
                 .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
-        .alert("New Session", isPresented: $showingNewSession) {
-            TextField("Session name", text: $newSessionName)
+        .alert("New Window", isPresented: $showingNewSession) {
+            TextField("Window name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
             Button("Create") {
                 if !newSessionName.isEmpty {
+                    // Clear any stale layout from a previous session with this name
+                    splitPaneManager.clearSavedLayout(for: newSessionName)
                     connectionManager.createSession(newSessionName)
                     connectionManager.attachToSession(newSessionName)
                     newSessionName = ""
@@ -479,79 +609,220 @@ struct SessionCompactView: View {
 // MARK: - Session List Sheet (iPhone)
 struct SessionListSheet: View {
     @EnvironmentObject var connectionManager: ConnectionManager
+    @EnvironmentObject var splitPaneManager: SplitPaneManager
     @Environment(\.dismiss) var dismiss
     @State private var showingNewSession = false
     @State private var newSessionName = ""
+    @State private var isEditMode = false
+    @State private var selectedSessions: Set<String> = []
+    @State private var showingDeleteConfirmation = false
+
+    private var allSelected: Bool {
+        !connectionManager.sessions.isEmpty &&
+        selectedSessions.count == connectionManager.sessions.count
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Custom glass header
-            HStack {
-                GlassCircleButton(
-                    icon: "xmark",
-                    size: 36,
-                    iconSize: 14,
-                    action: { dismiss() }
-                )
-
-                Spacer()
-
-                Text("Sessions")
+            // Custom header with centered title
+            ZStack {
+                // Centered title
+                Text("Windows")
                     .font(.headline)
 
-                Spacer()
-
-                GlassCircleButton(
-                    icon: "plus",
-                    size: 36,
-                    iconSize: 16,
-                    action: { showingNewSession = true }
-                )
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
-            // Sessions list
-            List {
-                Section {
-                    ForEach(connectionManager.sessions) { session in
-                        SessionRowView(session: session)
+                // Left and right buttons
+                HStack {
+                    if isEditMode {
+                        // Done button (blue - iOS standard)
+                        Button {
+                            withAnimation {
+                                isEditMode = false
+                                selectedSessions.removeAll()
+                            }
+                        } label: {
+                            Text("Done")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.blue)
+                        }
+                    } else {
+                        // Cancel to close
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Cancel")
+                                .font(.body.weight(.medium))
+                                .foregroundColor(.primary)
+                        }
                     }
-                } header: {
-                    HStack {
-                        Text("Active Sessions")
-                        Spacer()
-                        Text("\(connectionManager.sessions.count)")
-                            .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    // Right buttons
+                    if isEditMode {
+                        // Select all / deselect all
+                        Button {
+                            if allSelected {
+                                selectedSessions.removeAll()
+                            } else {
+                                selectedSessions = Set(connectionManager.sessions.map { $0.name })
+                            }
+                        } label: {
+                            Text(allSelected ? "Deselect" : "Select All")
+                                .font(.body.weight(.medium))
+                                .foregroundColor(.brandOrange)
+                        }
+                    } else {
+                        HStack(spacing: 12) {
+                            if connectionManager.sessions.count > 1 {
+                                // Select button (enter multi-select mode)
+                                Button {
+                                    withAnimation {
+                                        isEditMode = true
+                                    }
+                                } label: {
+                                    Text("Select")
+                                        .font(.body.weight(.medium))
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                            // New session button
+                            GlassCircleButton(
+                                icon: "plus",
+                                size: 36,
+                                iconSize: 16,
+                                action: { showingNewSession = true }
+                            )
+                        }
                     }
                 }
             }
-            .listStyle(.insetGrouped)
+            .frame(height: 44)
+            .padding(.horizontal, 16)
+            .padding(.top, 24)
+            .padding(.bottom, 8)
+
+            // Sessions list with overlay for delete button
+            ZStack(alignment: .bottom) {
+                List {
+                    Section {
+                        ForEach(connectionManager.sessions) { session in
+                            HStack(spacing: 12) {
+                                if isEditMode {
+                                    Button {
+                                        toggleSelection(session.name)
+                                    } label: {
+                                        Image(systemName: selectedSessions.contains(session.name)
+                                              ? "checkmark.circle.fill"
+                                              : "circle")
+                                            .foregroundColor(selectedSessions.contains(session.name)
+                                                            ? .brandOrange
+                                                            : .secondary)
+                                            .font(.title2)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                SessionRowView(session: session, isEditMode: isEditMode)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if isEditMode {
+                                    toggleSelection(session.name)
+                                }
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Active Windows")
+                            Spacer()
+                            Text("\(connectionManager.sessions.count)")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .contentMargins(.bottom, isEditMode && !selectedSessions.isEmpty ? 70 : 0, for: .scrollContent)
+
+                // Delete button when in edit mode with selections
+                if isEditMode && !selectedSessions.isEmpty {
+                    Button {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "trash.fill")
+                            Text("Delete \(selectedSessions.count) Window\(selectedSessions.count == 1 ? "" : "s")")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.red)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                }
+            }
         }
         .onChange(of: connectionManager.sessions) { _, newSessions in
             // Auto-dismiss when no sessions left
             if newSessions.isEmpty {
                 dismiss()
             }
+            // Clean up selections for deleted sessions
+            selectedSessions = selectedSessions.filter { name in
+                newSessions.contains { $0.name == name }
+            }
+            // Exit edit mode if only one session left
+            if newSessions.count <= 1 {
+                isEditMode = false
+            }
         }
         .onChange(of: connectionManager.currentSession?.name) { _, _ in
-            // Dismiss when user taps a session
-            dismiss()
+            // Dismiss when user taps a session (only if not in edit mode)
+            if !isEditMode {
+                dismiss()
+            }
         }
-        .alert("New Session", isPresented: $showingNewSession) {
-            TextField("Session name", text: $newSessionName)
+        .alert("New Window", isPresented: $showingNewSession) {
+            TextField("Window name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
             Button("Create") {
                 if !newSessionName.isEmpty {
+                    // Clear any stale layout from a previous session with this name
+                    splitPaneManager.clearSavedLayout(for: newSessionName)
                     connectionManager.createSession(newSessionName)
                     connectionManager.attachToSession(newSessionName)
                     newSessionName = ""
                 }
             }
         }
+        .alert("Delete Windows", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete \(selectedSessions.count)", role: .destructive) {
+                deleteSelectedSessions()
+            }
+        } message: {
+            Text("Are you sure you want to delete \(selectedSessions.count) window\(selectedSessions.count == 1 ? "" : "s")? This cannot be undone.")
+        }
+    }
+
+    private func toggleSelection(_ name: String) {
+        if selectedSessions.contains(name) {
+            selectedSessions.remove(name)
+        } else {
+            selectedSessions.insert(name)
+        }
+    }
+
+    private func deleteSelectedSessions() {
+        for name in selectedSessions {
+            connectionManager.killSession(name)
+        }
+        selectedSessions.removeAll()
+        isEditMode = false
     }
 }
 
@@ -624,7 +895,7 @@ struct NoSessionView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "plus")
                         .font(.body.weight(.semibold))
-                    Text("Create Session")
+                    Text("Create Window")
                         .font(.body.weight(.semibold))
                 }
                 .padding(.horizontal, 32)
@@ -666,42 +937,42 @@ struct ConnectView: View {
             Color(uiColor: .systemBackground)
                 .ignoresSafeArea()
 
-            // Animated background blobs
+            // Animated background blobs (lava lamp style)
             GeometryReader { geo in
                 ZStack {
                     // Top-left blob
                     Circle()
-                        .fill(Color.brandOrange.opacity(colorScheme == .dark ? 0.25 : 0.15))
-                        .frame(width: 300, height: 300)
-                        .blur(radius: 80)
+                        .fill(Color.brandOrange.opacity(colorScheme == .dark ? 0.3 : 0.18))
+                        .frame(width: 550, height: 550)
+                        .blur(radius: 120)
                         .position(
-                            x: geo.size.width * (animateGradient ? 0.3 : 0.15),
-                            y: geo.size.height * (animateGradient ? 0.25 : 0.15)
+                            x: geo.size.width * (animateGradient ? 0.25 : 0.05),
+                            y: geo.size.height * (animateGradient ? 0.3 : 0.1)
                         )
 
                     // Bottom-right blob
                     Circle()
-                        .fill(Color.brandAmber.opacity(colorScheme == .dark ? 0.2 : 0.12))
-                        .frame(width: 280, height: 280)
-                        .blur(radius: 70)
+                        .fill(Color.brandAmber.opacity(colorScheme == .dark ? 0.25 : 0.15))
+                        .frame(width: 500, height: 500)
+                        .blur(radius: 100)
                         .position(
-                            x: geo.size.width * (animateGradient ? 0.7 : 0.85),
-                            y: geo.size.height * (animateGradient ? 0.8 : 0.7)
+                            x: geo.size.width * (animateGradient ? 0.75 : 0.95),
+                            y: geo.size.height * (animateGradient ? 0.85 : 0.65)
                         )
 
                     // Center blob
                     Circle()
-                        .fill(Color.brandCream.opacity(colorScheme == .dark ? 0.15 : 0.1))
-                        .frame(width: 250, height: 250)
-                        .blur(radius: 75)
+                        .fill(Color.brandCream.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                        .frame(width: 450, height: 450)
+                        .blur(radius: 110)
                         .position(
-                            x: geo.size.width * (animateGradient ? 0.6 : 0.4),
-                            y: geo.size.height * (animateGradient ? 0.5 : 0.6)
+                            x: geo.size.width * (animateGradient ? 0.65 : 0.35),
+                            y: geo.size.height * (animateGradient ? 0.45 : 0.55)
                         )
                 }
             }
             .onAppear {
-                withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) {
                     animateGradient = true
                 }
             }

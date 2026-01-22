@@ -23,29 +23,75 @@ class ConnectionManager: ObservableObject {
     private let maxReconnectAttempts = 10
     private var appLifecycleObserver: NSObjectProtocol?
 
-    // MARK: - Terminal Output Handling
+    // MARK: - Per-Session Output Handling
     //
-    // When switching sessions, there's a critical timing issue:
-    // 1. Server sends scrollback history immediately upon attach
-    // 2. iOS app needs time to create the new terminal view
-    // 3. Data arriving before terminal is ready would be lost
+    // Split panes show DIFFERENT sessions simultaneously.
+    // Each session has its own:
+    // - Output buffer (for history)
+    // - Pending scrollback (for session switch timing)
+    // - Output handlers (terminal views subscribed to this session)
     //
-    // Solution: Buffer scrollback during session switch.
-    // - attachToSession() sets isReceivingScrollback = true
-    // - All output goes to pendingScrollback buffer
-    // - Server sends 'attached' AFTER all scrollback is sent
-    // - iOS creates terminal, which calls consumePendingScrollback()
-    // - Buffer is cleared, isReceivingScrollback = false
-    // - Subsequent output goes directly to onTerminalOutput
+    // Flow:
+    // 1. attachToSession(name) attaches to a session (can attach to multiple)
+    // 2. Server sends output with session name: { type: "output", name: "Test-3", data: "..." }
+    // 3. Output is routed to the correct session's handlers
+    // 4. Input goes to the "active" session (focused pane)
 
-    /// Callback for live terminal output. Set by TerminalViewRepresentable.
-    var onTerminalOutput: ((String) -> Void)?
+    /// Per-session connection state
+    struct SessionState {
+        var outputBuffer: String = ""
+        var outputHandlers: [UUID: (String) -> Void] = [:]
+    }
 
-    /// Buffer for scrollback during session switch. Consumed when new terminal is ready.
-    private var pendingScrollback: String = ""
+    /// State for each attached session
+    private var sessionStates: [String: SessionState] = [:]
+    private let maxOutputBufferSize = 2_000_000
 
-    /// True while switching sessions. Output goes to buffer instead of terminal.
-    private var isReceivingScrollback = false
+    /// The currently active session for input routing (focused pane's session)
+    @Published var activeSessionName: String?
+
+    /// Callback when a session is removed (killed or exited) - used to clear saved layouts
+    var onSessionRemoved: ((String) -> Void)?
+
+    /// Register a terminal output handler for a specific session
+    func registerOutputHandler(for sessionName: String, handler: @escaping (String) -> Void) -> UUID {
+        let id = UUID()
+        if sessionStates[sessionName] == nil {
+            sessionStates[sessionName] = SessionState()
+        }
+        sessionStates[sessionName]?.outputHandlers[id] = handler
+
+        // Feed any existing buffered output immediately
+        if let buffer = sessionStates[sessionName]?.outputBuffer, !buffer.isEmpty {
+            print("registerOutputHandler[\(sessionName)]: feeding \(buffer.count) buffered chars")
+            handler(buffer)
+        }
+
+        return id
+    }
+
+    /// Remove a terminal output handler
+    func unregisterOutputHandler(for sessionName: String, id: UUID) {
+        sessionStates[sessionName]?.outputHandlers.removeValue(forKey: id)
+    }
+
+    /// Send output to all handlers for a specific session
+    private func notifySessionOutput(_ sessionName: String, _ data: String) {
+        guard let state = sessionStates[sessionName] else {
+            print("notifySessionOutput[\(sessionName)]: no session state!")
+            return
+        }
+        let handlerCount = state.outputHandlers.count
+        print("notifySessionOutput[\(sessionName)]: \(data.count) chars to \(handlerCount) handlers")
+        for handler in state.outputHandlers.values {
+            handler(data)
+        }
+    }
+
+    /// Get the output buffer for a session
+    func getSessionOutputBuffer(for sessionName: String) -> String {
+        return sessionStates[sessionName]?.outputBuffer ?? ""
+    }
 
     var serverURL: String? {
         UserDefaults.standard.string(forKey: "serverURL") ?? "ws://192.168.1.231:3000"
@@ -121,8 +167,8 @@ class ConnectionManager: ObservableObject {
         isAuthenticated = false
         authRequired = false
         isAuthenticating = false
-        pendingScrollback = ""
-        isReceivingScrollback = false
+        sessionStates.removeAll()
+        activeSessionName = nil
 
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
@@ -166,9 +212,9 @@ class ConnectionManager: ObservableObject {
         authRequired = false
         sessions = []
         currentSession = nil
+        activeSessionName = nil
+        sessionStates.removeAll()
         lastError = nil  // Clear any error on intentional disconnect
-        pendingScrollback = ""
-        isReceivingScrollback = false
     }
 
     private func receiveMessage() {
@@ -252,8 +298,8 @@ class ConnectionManager: ObservableObject {
 
         // Clear stale session data - server will send fresh list
         sessions = []
-        pendingScrollback = ""
-        isReceivingScrollback = false
+        sessionStates.removeAll()
+        activeSessionName = nil
 
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
@@ -381,30 +427,63 @@ class ConnectionManager: ObservableObject {
                 }
             }
 
-        case .output(let data):
-            if isReceivingScrollback {
-                // Buffer data while switching sessions - new terminal will retrieve it
-                pendingScrollback += data
-            } else {
-                onTerminalOutput?(data)
+        case .output(let sessionName, let data):
+            // Route output to the correct session's state
+            let targetSession = sessionName.isEmpty ? (activeSessionName ?? currentSession?.name ?? "") : sessionName
+
+            // Ensure session state exists
+            if sessionStates[targetSession] == nil {
+                sessionStates[targetSession] = SessionState()
             }
+
+            // Append to buffer and trim if needed
+            sessionStates[targetSession]?.outputBuffer += data
+            if let bufferCount = sessionStates[targetSession]?.outputBuffer.count,
+               bufferCount > maxOutputBufferSize {
+                sessionStates[targetSession]?.outputBuffer.removeFirst(bufferCount - maxOutputBufferSize)
+            }
+
+            // Notify all handlers
+            notifySessionOutput(targetSession, data)
 
         case .created(let name):
             print("Session created: \(name)")
 
         case .attached(let name):
-            currentSession = sessions.first { $0.name == name } ?? Session(name: name)
-            lastSessionName = name  // Remember for next time
+            // Don't switch currentSession for pane sessions (created during split)
+            if !paneSessions.contains(name) {
+                currentSession = sessions.first { $0.name == name } ?? Session(name: name)
+                lastSessionName = name  // Remember for next time
+            }
+            // Set as active session if not already set
+            if activeSessionName == nil {
+                activeSessionName = name
+            }
+
+        case .activeSessionSet(let name):
+            activeSessionName = name
 
         case .killed(let name):
             if currentSession?.name == name {
                 currentSession = nil
             }
+            if activeSessionName == name {
+                activeSessionName = nil
+            }
+            sessionStates.removeValue(forKey: name)
             sessions.removeAll { $0.name == name }
+            onSessionRemoved?(name)
 
         case .renamed(let oldName, let newName):
             if currentSession?.name == oldName {
                 currentSession = Session(name: newName)
+            }
+            if activeSessionName == oldName {
+                activeSessionName = newName
+            }
+            // Move session state to new name
+            if let state = sessionStates.removeValue(forKey: oldName) {
+                sessionStates[newName] = state
             }
             if let index = sessions.firstIndex(where: { $0.name == oldName }) {
                 sessions[index] = Session(name: newName)
@@ -415,6 +494,7 @@ class ConnectionManager: ObservableObject {
             if currentSession?.name == name {
                 currentSession = nil
             }
+            onSessionRemoved?(name)
 
         case .error(let message):
             lastError = message
@@ -454,27 +534,42 @@ class ConnectionManager: ObservableObject {
 
     // MARK: - Session Management
 
+    /// Sessions created for split panes (should not switch currentSession)
+    private var paneSessions: Set<String> = []
+
     func createSession(_ name: String) {
         sendMessage(["type": "create", "name": name])
     }
 
-    /// Attach to a session by name.
-    /// Starts buffering output until the new terminal is ready to receive it.
-    func attachToSession(_ name: String) {
-        // Clear buffer and start collecting scrollback
-        pendingScrollback = ""
-        isReceivingScrollback = true
+    /// Create a session for a split pane - doesn't switch currentSession when attached
+    func createPaneSession(_ name: String) {
+        paneSessions.insert(name)
+        sendMessage(["type": "create", "name": name, "ephemeral": true])
         sendMessage(["type": "attach", "name": name])
     }
 
-    /// Called by TerminalViewRepresentable when the new terminal is ready.
-    /// Returns all buffered scrollback and stops buffering mode.
-    func consumePendingScrollback() -> String {
-        let data = pendingScrollback
-        pendingScrollback = ""
-        isReceivingScrollback = false
-        return data
+    /// Attach to a session by name.
+    /// Supports multiple simultaneous attachments for split panes.
+    func attachToSession(_ name: String) {
+        sendMessage(["type": "attach", "name": name])
     }
+
+    /// Detach from a specific session
+    func detachFromSession(_ name: String) {
+        sessionStates.removeValue(forKey: name)
+        sendMessage(["type": "detach", "name": name])
+        // Clear active session if this was it
+        if activeSessionName == name {
+            activeSessionName = nil
+        }
+    }
+
+    /// Set the active session for input routing (called when pane focus changes)
+    func setActiveSession(_ name: String) {
+        activeSessionName = name
+        sendMessage(["type": "set-active-session", "name": name])
+    }
+
 
     func killSession(_ name: String) {
         sendMessage(["type": "kill", "name": name])
@@ -486,12 +581,22 @@ class ConnectionManager: ObservableObject {
 
     // MARK: - Terminal I/O
 
-    func sendInput(_ text: String) {
-        sendMessage(["type": "input", "data": text])
+    /// Send input to a specific session, or the active session if none specified
+    func sendInput(_ text: String, to sessionName: String? = nil) {
+        var msg: [String: Any] = ["type": "input", "data": text]
+        if let name = sessionName {
+            msg["name"] = name
+        }
+        sendMessage(msg)
     }
 
-    func sendResize(cols: Int, rows: Int) {
-        sendMessage(["type": "resize", "cols": cols, "rows": rows])
+    /// Send resize to a specific session, or the active session if none specified
+    func sendResize(cols: Int, rows: Int, for sessionName: String? = nil) {
+        var msg: [String: Any] = ["type": "resize", "cols": cols, "rows": rows]
+        if let name = sessionName {
+            msg["name"] = name
+        }
+        sendMessage(msg)
     }
 
     // MARK: - Clipboard Sync

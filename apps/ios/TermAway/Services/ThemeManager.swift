@@ -37,6 +37,19 @@ class ThemeManager: ObservableObject {
         }
     }
 
+    @Published var focusGlowEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(focusGlowEnabled, forKey: "focusGlowEnabled")
+        }
+    }
+
+    @Published var focusGlowColor: Color {
+        didSet {
+            // Store as hex string
+            UserDefaults.standard.set(focusGlowColor.toHex(), forKey: "focusGlowColor")
+        }
+    }
+
     private let themeKey = "terminalTheme"
 
     init() {
@@ -58,6 +71,20 @@ class ThemeManager: ObservableObject {
             self.appearanceMode = mode
         } else {
             self.appearanceMode = .system
+        }
+
+        // Load focus glow settings (default: enabled, orange)
+        if UserDefaults.standard.object(forKey: "focusGlowEnabled") != nil {
+            self.focusGlowEnabled = UserDefaults.standard.bool(forKey: "focusGlowEnabled")
+        } else {
+            self.focusGlowEnabled = true
+        }
+
+        if let hexString = UserDefaults.standard.string(forKey: "focusGlowColor"),
+           let color = Color(hex: hexString) {
+            self.focusGlowColor = color
+        } else {
+            self.focusGlowColor = .brandOrange
         }
     }
 

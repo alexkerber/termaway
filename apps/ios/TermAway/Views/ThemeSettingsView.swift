@@ -40,6 +40,18 @@ struct ThemeSettingsView: View {
                     Text("Changes apply to new terminal sessions")
                 }
 
+                // Focus Indicator Section (iPad only)
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    Section {
+                        Toggle("Glow Effect", isOn: $themeManager.focusGlowEnabled)
+                        ColorPicker("Color", selection: $themeManager.focusGlowColor, supportsOpacity: false)
+                    } header: {
+                        Label("Focus Indicator", systemImage: "sparkles")
+                    } footer: {
+                        Text(themeManager.focusGlowEnabled ? "Glow highlights the active pane" : "Border highlights the active pane")
+                    }
+                }
+
                 Section {
                     ThemeLivePreview()
                         .frame(height: 120)
