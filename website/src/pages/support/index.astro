@@ -1,0 +1,212 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+---
+
+<Layout
+    title="Support - TermAway"
+    description="Get help with TermAway - Your Mac terminal on your iPad and iPhone. Find answers to common questions and learn how to get support."
+    ogUrl="https://termaway.app/support"
+>
+    <Header />
+
+    <section class="support-page">
+        <div class="container">
+            <div class="support-header">
+                <h1>Support</h1>
+                <p class="subtitle">Find answers to common questions or get in touch</p>
+            </div>
+
+            <div class="support-content">
+                <h2>Getting Started</h2>
+                <p>
+                    TermAway lets you access your Mac's terminal from your iPad, iPhone, or any browser on your local network. Here's how to get up and running:
+                </p>
+                <ol>
+                    <li><strong>Install the macOS app</strong> — Download TermAway from the <a href="/#download">downloads page</a> and open it on your Mac. It runs as a menu bar app.</li>
+                    <li><strong>Start the server</strong> — Click the TermAway icon in your menu bar and start the server. It will display a local URL (e.g. <code>http://192.168.1.x:3000</code>).</li>
+                    <li><strong>Connect from your device</strong> — Open the TermAway iOS app or visit the URL in any browser on the same network. Your terminal is ready to use.</li>
+                </ol>
+
+                <h2>Frequently Asked Questions</h2>
+
+                <h3>Do I need an internet connection?</h3>
+                <p>
+                    No. TermAway works entirely over your local network (LAN). Your devices just need to be on the same Wi-Fi network. No internet connection, cloud account, or external server is required.
+                </p>
+
+                <h3>Is my data secure?</h3>
+                <p>
+                    Yes. All terminal data stays on your local network and never leaves it. Nothing is sent to external servers. You can optionally set a password for server access. TermAway is also <a href="https://github.com/alexkerber/termaway" target="_blank">open source</a>, so you can inspect the code yourself.
+                </p>
+
+                <h3>My device can't find the server</h3>
+                <p>
+                    Make sure both your Mac and your iOS device are on the same Wi-Fi network. If automatic discovery isn't working, try entering the server URL manually. You can find the URL in the macOS menu bar app. Also check that your Mac's firewall isn't blocking incoming connections on the server port.
+                </p>
+
+                <h3>The terminal is not responding</h3>
+                <p>
+                    Try detaching and reattaching the session, or creating a new session. If the server has restarted, existing sessions may have been cleared. You can also restart the server from the macOS menu bar app.
+                </p>
+
+                <h3>Which shells are supported?</h3>
+                <p>
+                    TermAway uses your Mac's default shell (set in <code>$SHELL</code>). This is typically <code>zsh</code> on modern macOS. Bash, fish, and other shells work as well — just change your default shell in System Settings or via <code>chsh</code>.
+                </p>
+
+                <h3>Can I use this outside my home network?</h3>
+                <p>
+                    TermAway is designed for local network use only. It does not support connections over the internet. This is an intentional security decision — your terminal should not be exposed to the public internet.
+                </p>
+
+                <h2>Reporting Issues</h2>
+                <p>
+                    If you've found a bug or have a feature request, please open an issue on our <a href="https://github.com/alexkerber/termaway/issues" target="_blank">GitHub Issues</a> page. When reporting a bug, include:
+                </p>
+                <ul>
+                    <li>What you were trying to do</li>
+                    <li>What happened instead</li>
+                    <li>Your macOS version and device model</li>
+                    <li>The TermAway version (shown in the menu bar app)</li>
+                </ul>
+
+                <h2>Contact</h2>
+                <p>
+                    If you need help or have questions that aren't covered here, you can reach us through:
+                </p>
+                <ul>
+                    <li>GitHub Issues: <a href="https://github.com/alexkerber/termaway/issues" target="_blank">github.com/alexkerber/termaway/issues</a></li>
+                    <li>Email: <a href="mailto:support@termaway.app">support@termaway.app</a></li>
+                    <li>Website: <a href="https://termaway.app">termaway.app</a></li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <Footer />
+</Layout>
+
+<style>
+    .support-page {
+        padding: 140px 0 80px;
+        min-height: 100vh;
+    }
+
+    .support-page .container {
+        max-width: 800px;
+    }
+
+    .support-header {
+        margin-bottom: 48px;
+    }
+
+    .support-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin-bottom: 16px;
+    }
+
+    .support-header .subtitle {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+    }
+
+    .support-content {
+        background: var(--bg-glass);
+        border: 1px solid var(--border-glass);
+        border-radius: 24px;
+        padding: 48px;
+        backdrop-filter: blur(10px);
+    }
+
+    .support-content h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-top: 40px;
+        margin-bottom: 16px;
+        color: var(--text-primary);
+    }
+
+    .support-content h2:first-child {
+        margin-top: 0;
+    }
+
+    .support-content h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+
+    .support-content p {
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        line-height: 1.7;
+    }
+
+    .support-content ul,
+    .support-content ol {
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        padding-left: 24px;
+    }
+
+    .support-content li {
+        margin-bottom: 8px;
+        line-height: 1.7;
+    }
+
+    .support-content a {
+        color: var(--accent-orange);
+        text-decoration: none;
+    }
+
+    .support-content a:hover {
+        text-decoration: underline;
+    }
+
+    .support-content strong {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+
+    .support-content code {
+        background: var(--bg-card);
+        border: 1px solid var(--border-glass);
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-family: "Geist Mono", monospace;
+        font-size: 0.9em;
+    }
+
+    @media (max-width: 640px) {
+        .support-page {
+            padding: 100px 0 60px;
+        }
+
+        .support-header h1 {
+            font-size: 1.75rem;
+        }
+
+        .support-content {
+            padding: 24px;
+        }
+
+        .support-content h2 {
+            font-size: 1.25rem;
+        }
+    }
+
+    :global([data-theme="light"]) .support-content {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    @media (prefers-color-scheme: light) {
+        :global(:root:not([data-theme])) .support-content {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+    }
+</style>
