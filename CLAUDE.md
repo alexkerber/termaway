@@ -135,7 +135,8 @@ When creating a new release:
 
 2. **Asset naming convention (IMPORTANT):**
    - macOS zip: `TermAway-macOS-v{version}.zip` (e.g., `TermAway-macOS-v1.1.2.zip`)
-   - Save to: `builds/TermAway-macOS-v{version}.zip`
+   - Linux tarball: `TermAway-Linux-v{version}.tar.gz` (e.g., `TermAway-Linux-v1.2.0.tar.gz`)
+   - Save to: `builds/`
 
 3. **Build and notarize macOS app:**
 
@@ -161,10 +162,27 @@ When creating a new release:
    mv TermAway-macOS-v{version}.zip /path/to/termaway/builds/
    ```
 
-4. **Create GitHub release:**
+4. **Build Linux server package:**
 
    ```bash
-   gh release create v{version} builds/TermAway-macOS-v{version}.zip
+   # Create tarball from repo root
+   mkdir -p /tmp/termaway-linux/apps
+   cp -r server /tmp/termaway-linux/
+   cp -r apps/web /tmp/termaway-linux/apps/web
+   cp package.json /tmp/termaway-linux/
+   cp server/install-linux.sh /tmp/termaway-linux/install.sh
+   cp server/uninstall-linux.sh /tmp/termaway-linux/uninstall.sh
+   cd /tmp && tar czf TermAway-Linux-v{version}.tar.gz termaway-linux
+   mv TermAway-Linux-v{version}.tar.gz /path/to/termaway/builds/
+   rm -rf /tmp/termaway-linux
+   ```
+
+5. **Create GitHub release:**
+
+   ```bash
+   gh release create v{version} \
+     builds/TermAway-macOS-v{version}.zip \
+     builds/TermAway-Linux-v{version}.tar.gz
    ```
 
 Website deploys automatically via Vercel on push to main.

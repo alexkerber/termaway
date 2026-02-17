@@ -163,8 +163,11 @@ app.get("/api/sessions", (req, res) => {
   res.json({ sessions: sessionManager.list() });
 });
 
-// Track which session each WebSocket is attached to
-const wsSessionMap = new WeakMap();
+// Track which sessions each WebSocket is attached to (supports multiple for split panes)
+const wsSessionsMap = new WeakMap(); // ws -> Set<sessionName>
+
+// Track the "active" session for input routing (the focused pane's session)
+const wsActiveSessionMap = new WeakMap(); // ws -> sessionName
 
 // Track authenticated WebSocket connections
 const wsAuthMap = new WeakMap();
@@ -255,7 +258,8 @@ wss.on("connection", (ws, req) => {
     const wasAuthenticated = wsAuthMap.get(ws);
     const clientInfo = wsClientInfo.get(ws);
     sessionManager.detachAll(ws);
-    wsSessionMap.delete(ws);
+    wsSessionsMap.delete(ws);
+    wsActiveSessionMap.delete(ws);
     wsAuthMap.delete(ws);
     wsClientInfo.delete(ws);
     if (wasAuthenticated && clientInfo) {
@@ -352,7 +356,7 @@ function handleMessage(ws, msg) {
         break;
 
       case "create":
-        handleCreate(ws, msg.name);
+        handleCreate(ws, msg.name, msg.ephemeral === true);
         break;
 
       case "attach":
@@ -360,11 +364,15 @@ function handleMessage(ws, msg) {
         break;
 
       case "input":
-        handleInput(ws, msg.data);
+        handleInput(ws, msg.data, msg.name);
+        break;
+
+      case "set-active-session":
+        handleSetActiveSession(ws, msg.name);
         break;
 
       case "resize":
-        handleResize(ws, msg.cols, msg.rows);
+        handleResize(ws, msg.cols, msg.rows, msg.name);
         break;
 
       case "kill":
@@ -376,7 +384,7 @@ function handleMessage(ws, msg) {
         break;
 
       case "detach":
-        handleDetach(ws);
+        handleDetach(ws, msg.name);
         break;
 
       case "clipboard-set":
@@ -419,7 +427,7 @@ function handleList(ws) {
 /**
  * Create a new session
  */
-function handleCreate(ws, name) {
+function handleCreate(ws, name, ephemeral = false) {
   if (!name || typeof name !== "string") {
     ws.send(
       JSON.stringify({ type: "error", message: "Session name is required" }),
@@ -444,21 +452,21 @@ function handleCreate(ws, name) {
     return;
   }
 
-  sessionManager.create(sanitizedName);
+  sessionManager.create(sanitizedName, ephemeral);
   sessionManager.attach(sanitizedName, ws);
-  wsSessionMap.set(ws, sanitizedName);
+  wsActiveSessionMap.set(ws, sanitizedName);
 
   ws.send(JSON.stringify({ type: "created", name: sanitizedName }));
   ws.send(JSON.stringify({ type: "attached", name: sanitizedName }));
 
-  // Broadcast updated session list to all clients
+  // Broadcast updated session list to all clients (ephemeral sessions won't appear)
   broadcastSessionList();
 }
 
 /**
  * Attach to an existing session.
+ * Supports multiple simultaneous attachments for split panes.
  * Waits for all scrollback to be sent before confirming attachment.
- * This ensures the client receives all history before updating its UI.
  */
 async function handleAttach(ws, name) {
   if (!name || typeof name !== "string") {
@@ -475,17 +483,28 @@ async function handleAttach(ws, name) {
     return;
   }
 
-  // Detach from current session if any
-  const currentSession = wsSessionMap.get(ws);
-  if (currentSession) {
-    sessionManager.detach(currentSession, ws);
+  // Get or create the set of attached sessions for this client
+  let attachedSessions = wsSessionsMap.get(ws);
+  if (!attachedSessions) {
+    attachedSessions = new Set();
+    wsSessionsMap.set(ws, attachedSessions);
+  }
+
+  // Skip if already attached to this session
+  if (attachedSessions.has(name)) {
+    // Just set as active and confirm
+    wsActiveSessionMap.set(ws, name);
+    ws.send(JSON.stringify({ type: "attached", name }));
+    return;
   }
 
   const session = sessionManager.attach(name, ws);
-  wsSessionMap.set(ws, name);
+  attachedSessions.add(name);
+
+  // Set as active session (for input routing)
+  wsActiveSessionMap.set(ws, name);
 
   // Wait for all scrollback chunks to be sent before confirming
-  // This prevents the client from creating its terminal too early
   if (session.scrollbackPromise) {
     await session.scrollbackPromise;
   }
@@ -495,12 +514,27 @@ async function handleAttach(ws, name) {
 
 /**
  * Handle terminal input
+ * If 'name' is provided, routes to that specific session.
+ * Otherwise routes to the active (focused) session.
  */
-function handleInput(ws, data) {
-  const sessionName = wsSessionMap.get(ws);
+function handleInput(ws, data, targetSession = null) {
+  // Use explicit target or fall back to active session
+  const sessionName = targetSession || wsActiveSessionMap.get(ws);
   if (!sessionName) {
     ws.send(
       JSON.stringify({ type: "error", message: "Not attached to any session" }),
+    );
+    return;
+  }
+
+  // Verify we're attached to this session
+  const attachedSessions = wsSessionsMap.get(ws);
+  if (!attachedSessions || !attachedSessions.has(sessionName)) {
+    ws.send(
+      JSON.stringify({
+        type: "error",
+        message: `Not attached to session "${sessionName}"`,
+      }),
     );
     return;
   }
@@ -509,10 +543,38 @@ function handleInput(ws, data) {
 }
 
 /**
- * Handle terminal resize
+ * Set the active session for input routing (when user focuses a different pane)
  */
-function handleResize(ws, cols, rows) {
-  const sessionName = wsSessionMap.get(ws);
+function handleSetActiveSession(ws, name) {
+  if (!name || typeof name !== "string") {
+    ws.send(
+      JSON.stringify({ type: "error", message: "Session name is required" }),
+    );
+    return;
+  }
+
+  const attachedSessions = wsSessionsMap.get(ws);
+  if (!attachedSessions || !attachedSessions.has(name)) {
+    ws.send(
+      JSON.stringify({
+        type: "error",
+        message: `Not attached to session "${name}"`,
+      }),
+    );
+    return;
+  }
+
+  wsActiveSessionMap.set(ws, name);
+  ws.send(JSON.stringify({ type: "active-session-set", name }));
+}
+
+/**
+ * Handle terminal resize
+ * If 'name' is provided, resizes that specific session.
+ * Otherwise resizes the active session.
+ */
+function handleResize(ws, cols, rows, targetSession = null) {
+  const sessionName = targetSession || wsActiveSessionMap.get(ws);
   if (!sessionName) {
     // Silently ignore resize if not attached
     return;
@@ -548,10 +610,16 @@ function handleKill(ws, name) {
     return;
   }
 
-  // If the caller is attached to this session, detach first
-  const currentSession = wsSessionMap.get(ws);
-  if (currentSession === name) {
-    wsSessionMap.delete(ws);
+  // Remove from all clients' attached sessions
+  for (const client of wss.clients) {
+    const attachedSessions = wsSessionsMap.get(client);
+    if (attachedSessions) {
+      attachedSessions.delete(name);
+    }
+    // Clear active session if it was this one
+    if (wsActiveSessionMap.get(client) === name) {
+      wsActiveSessionMap.delete(client);
+    }
   }
 
   sessionManager.kill(name);
@@ -586,10 +654,15 @@ function handleRename(ws, oldName, newName) {
 
   sessionManager.rename(oldName, sanitizedNewName);
 
-  // Update session map for all attached clients
+  // Update session maps for all attached clients
   for (const client of wss.clients) {
-    if (wsSessionMap.get(client) === oldName) {
-      wsSessionMap.set(client, sanitizedNewName);
+    const attachedSessions = wsSessionsMap.get(client);
+    if (attachedSessions && attachedSessions.has(oldName)) {
+      attachedSessions.delete(oldName);
+      attachedSessions.add(sanitizedNewName);
+    }
+    if (wsActiveSessionMap.get(client) === oldName) {
+      wsActiveSessionMap.set(client, sanitizedNewName);
     }
   }
 
@@ -598,13 +671,32 @@ function handleRename(ws, oldName, newName) {
 }
 
 /**
- * Detach from current session
+ * Detach from a session (or all sessions if no name provided)
  */
-function handleDetach(ws) {
-  const currentSession = wsSessionMap.get(ws);
-  if (currentSession) {
-    sessionManager.detach(currentSession, ws);
-    wsSessionMap.delete(ws);
+function handleDetach(ws, name = null) {
+  const attachedSessions = wsSessionsMap.get(ws);
+  if (!attachedSessions || attachedSessions.size === 0) {
+    return;
+  }
+
+  if (name) {
+    // Detach from specific session
+    if (attachedSessions.has(name)) {
+      sessionManager.detach(name, ws);
+      attachedSessions.delete(name);
+      // If this was the active session, clear it
+      if (wsActiveSessionMap.get(ws) === name) {
+        wsActiveSessionMap.delete(ws);
+      }
+      ws.send(JSON.stringify({ type: "detached", name }));
+    }
+  } else {
+    // Detach from all sessions
+    for (const sessionName of attachedSessions) {
+      sessionManager.detach(sessionName, ws);
+    }
+    attachedSessions.clear();
+    wsActiveSessionMap.delete(ws);
     ws.send(JSON.stringify({ type: "detached" }));
   }
 }
@@ -656,7 +748,7 @@ function handleListClients(ws) {
   for (const client of wss.clients) {
     if (wsAuthMap.get(client)) {
       const info = wsClientInfo.get(client);
-      const sessionName = wsSessionMap.get(client);
+      const sessionName = wsActiveSessionMap.get(client);
       clients.push({
         id: id++,
         ip: info?.ip || "unknown",
@@ -768,7 +860,7 @@ server.listen(PORT, HOST, () => {
 });
 
 // Graceful shutdown
-process.on("SIGINT", () => {
+function shutdown() {
   console.log("\nShutting down...");
 
   // Stop heartbeat
@@ -797,4 +889,7 @@ process.on("SIGINT", () => {
       process.exit(0);
     });
   });
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

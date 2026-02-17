@@ -29,6 +29,17 @@ import Footer from '../../components/Footer.astro';
                     <li><strong>Connect from your device</strong> — Open the TermAway iOS app or visit the URL in any browser on the same network. Your terminal is ready to use.</li>
                 </ol>
 
+                <h2>Getting Started on Linux</h2>
+                <p>
+                    TermAway's server also runs on Linux. Here's how to set it up:
+                </p>
+                <ol>
+                    <li><strong>Download the Linux package</strong> — Get the latest <code>.tar.gz</code> from the <a href="/#download">downloads page</a>.</li>
+                    <li><strong>Extract and install</strong> — Run <code>tar xzf TermAway-Linux-*.tar.gz && cd termaway-linux && sudo ./install.sh</code></li>
+                    <li><strong>Start the server</strong> — Run <code>sudo systemctl start termaway</code>. The server starts on port 3000 by default.</li>
+                    <li><strong>Connect from your device</strong> — Open the TermAway iOS app or visit <code>http://your-linux-ip:3000</code> in any browser on the same network.</li>
+                </ol>
+
                 <h2>Frequently Asked Questions</h2>
 
                 <h3>Do I need an internet connection?</h3>
@@ -53,7 +64,12 @@ import Footer from '../../components/Footer.astro';
 
                 <h3>Which shells are supported?</h3>
                 <p>
-                    TermAway uses your Mac's default shell (set in <code>$SHELL</code>). This is typically <code>zsh</code> on modern macOS. Bash, fish, and other shells work as well — just change your default shell in System Settings or via <code>chsh</code>.
+                    TermAway uses your system's default shell (set in <code>$SHELL</code>). This is typically <code>zsh</code> on macOS and <code>bash</code> on Linux. Fish and other shells work as well — just change your default shell in System Settings (macOS) or via <code>chsh</code>.
+                </p>
+
+                <h3>Can I run the server on Linux?</h3>
+                <p>
+                    Yes. TermAway's server runs on any Linux distribution with Node.js 18+. Download the Linux package from the <a href="/#download">downloads page</a> and run the install script. The server runs as a systemd service and starts automatically on boot.
                 </p>
 
                 <h3>Can I use this outside my home network?</h3>
@@ -68,7 +84,7 @@ import Footer from '../../components/Footer.astro';
                 <ul>
                     <li>What you were trying to do</li>
                     <li>What happened instead</li>
-                    <li>Your macOS version and device model</li>
+                    <li>Your macOS/Linux version and device model</li>
                     <li>The TermAway version (shown in the menu bar app)</li>
                 </ul>
 

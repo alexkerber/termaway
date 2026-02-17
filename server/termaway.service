@@ -1,0 +1,14 @@
+[Unit]
+Description=TermAway Terminal Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/termaway
+ExecStart=/usr/bin/node /opt/termaway/server/index.js
+Restart=on-failure
+RestartSec=5
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
