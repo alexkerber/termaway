@@ -16,7 +16,7 @@ const CONFIG = {
 // =============================================================================
 
 class Session {
-  constructor(name, ptyProcess) {
+  constructor(name, ptyProcess, ephemeral = false) {
     this.name = name;
     this.pty = ptyProcess;
     this.clients = new Set();
@@ -28,6 +28,8 @@ class Session {
     this.lastResizeAt = 0;
     // Track each client's terminal size for multi-client scenarios
     this.clientSizes = new WeakMap();
+    // Ephemeral sessions don't show in the session list (used for split panes)
+    this.ephemeral = ephemeral;
   }
 
   // Store output in scrollback buffer
@@ -75,14 +77,16 @@ class SessionManager {
   constructor() {
     this.sessions = new Map();
     this.clipboard = "";
-    console.log("Session manager ready (PTY mode)");
+    console.log(
+      "Session manager ready (PTY mode) - OUTPUT INCLUDES SESSION NAME v2",
+    );
   }
 
   // ---------------------------------------------------------------------------
   // Session Lifecycle
   // ---------------------------------------------------------------------------
 
-  create(name) {
+  create(name, ephemeral = false) {
     if (this.sessions.has(name)) {
       throw new Error(`Session "${name}" already exists`);
     }
@@ -104,11 +108,11 @@ class SessionManager {
       },
     });
 
-    const session = new Session(name, ptyProcess);
+    const session = new Session(name, ptyProcess, ephemeral);
     this.sessions.set(name, session);
     this._setupHandlers(session);
 
-    console.log(`Created session "${name}"`);
+    console.log(`Created ${ephemeral ? "ephemeral " : ""}session "${name}"`);
     return session;
   }
 
@@ -176,7 +180,11 @@ class SessionManager {
 
       if (scrollback.length <= CHUNK_SIZE) {
         // Small enough to send in one message
-        session.send(ws, { type: "output", data: scrollback });
+        session.send(ws, {
+          type: "output",
+          name: session.name,
+          data: scrollback,
+        });
         resolve();
       } else {
         // Send in chunks with small delays to let client process
@@ -187,7 +195,7 @@ class SessionManager {
             return;
           }
           const chunk = scrollback.slice(offset, offset + CHUNK_SIZE);
-          session.send(ws, { type: "output", data: chunk });
+          session.send(ws, { type: "output", name: session.name, data: chunk });
           offset += CHUNK_SIZE;
           if (offset < scrollback.length) {
             setTimeout(sendChunk, 50); // 50ms delay between chunks
@@ -216,10 +224,16 @@ class SessionManager {
       );
       // Recalculate size now that this client is gone
       this._recalculateSize(session);
+      // Auto-kill ephemeral sessions when no clients remain
+      if (session.ephemeral && session.clients.size === 0) {
+        console.log(`Auto-killing ephemeral session "${name}"`);
+        this.kill(name);
+      }
     }
   }
 
   detachAll(ws) {
+    const sessionsToKill = [];
     for (const [name, session] of this.sessions) {
       if (session.clients.delete(ws)) {
         console.log(
@@ -227,7 +241,16 @@ class SessionManager {
         );
         // Recalculate size now that this client is gone
         this._recalculateSize(session);
+        // Mark ephemeral sessions for cleanup
+        if (session.ephemeral && session.clients.size === 0) {
+          sessionsToKill.push(name);
+        }
       }
+    }
+    // Kill ephemeral sessions after iteration
+    for (const name of sessionsToKill) {
+      console.log(`Auto-killing ephemeral session "${name}"`);
+      this.kill(name);
     }
   }
 
@@ -326,7 +349,10 @@ class SessionManager {
   // ---------------------------------------------------------------------------
 
   list() {
-    return Array.from(this.sessions.keys());
+    // Filter out ephemeral sessions (used for split panes)
+    return Array.from(this.sessions.entries())
+      .filter(([_, session]) => !session.ephemeral)
+      .map(([name]) => name);
   }
 
   exists(name) {
@@ -370,7 +396,12 @@ class SessionManager {
   _setupHandlers(session) {
     session.pty.onData((data) => {
       session.pushScrollback(data);
-      session.broadcast({ type: "output", data });
+      // Include session name so clients can route to correct pane
+      const msg = { type: "output", name: session.name, data };
+      console.log(
+        `Broadcasting output for "${session.name}": ${data.length} chars`,
+      );
+      session.broadcast(msg);
     });
 
     session.pty.onExit(({ exitCode, signal }) => {

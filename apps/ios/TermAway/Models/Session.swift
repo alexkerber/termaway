@@ -16,12 +16,13 @@ struct Session: Identifiable, Codable, Equatable {
 // Server message types
 enum ServerMessage {
     case sessions([Session])
-    case output(String)
+    case output(String, String)  // (sessionName, data)
     case created(String)
     case attached(String)
     case killed(String)
     case renamed(String, String)
     case exited(String, Int)
+    case activeSessionSet(String)
     case error(String)
     case unknown
 
@@ -46,7 +47,16 @@ enum ServerMessage {
 
         case "output":
             if let data = json["data"] as? String {
-                self = .output(data)
+                // Session name is now included for multi-session support
+                let sessionName = json["name"] as? String ?? ""
+                self = .output(sessionName, data)
+            } else {
+                self = .unknown
+            }
+
+        case "active-session-set":
+            if let name = json["name"] as? String {
+                self = .activeSessionSet(name)
             } else {
                 self = .unknown
             }

@@ -100,7 +100,7 @@ struct SettingsView: View {
                     }
 
                     HStack {
-                        Text("Sessions")
+                        Text("Windows")
                         Spacer()
                         Text("\(connectionManager.sessions.count)")
                             .foregroundStyle(.secondary)
