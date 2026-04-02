@@ -26,10 +26,10 @@
 		1100000000000017 /* SplitPaneManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000018 /* SplitPaneManager.swift */; };
 		1100000000000018 /* SplitTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000019 /* SplitTerminalView.swift */; };
 		1100000000000020 /* IndependentTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000021 /* IndependentTerminalView.swift */; };
-		BB1E9FAB467DE7DC40365FE2 /* PaneConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000020 /* PaneConnection.swift */; };
 		1100000000000022 /* BiometricManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000022 /* BiometricManager.swift */; };
 		1100000000000023 /* KeyboardShortcutCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000023 /* KeyboardShortcutCommands.swift */; };
 		1100000000000024 /* TerminalSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000024 /* TerminalSearchBar.swift */; };
+		BB1E9FAB467DE7DC40365FE2 /* PaneConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000020 /* PaneConnection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
