@@ -28,6 +28,45 @@ const authAttempts = new Map(); // IP -> { count, firstAttempt }
 const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_WINDOW_MS = 60000; // 1 minute window
 
+// Input validation constants
+const MAX_SESSION_NAME_LENGTH = 50;
+const SESSION_NAME_PATTERN = /^[a-zA-Z0-9\-_. ]+$/;
+const MAX_MESSAGE_SIZE = 1024 * 1024; // 1MB
+const MAX_INPUT_SIZE = 64 * 1024; // 64KB
+
+/**
+ * Validate and sanitize a session name.
+ * Returns { valid: true, name: trimmedName } or { valid: false, error: string }.
+ */
+function validateSessionName(name) {
+  if (!name || typeof name !== "string") {
+    return { valid: false, error: "Session name is required" };
+  }
+
+  const trimmed = name.trim();
+
+  if (!trimmed) {
+    return { valid: false, error: "Session name cannot be empty" };
+  }
+
+  if (trimmed.length > MAX_SESSION_NAME_LENGTH) {
+    return {
+      valid: false,
+      error: `Session name exceeds maximum length of ${MAX_SESSION_NAME_LENGTH} characters`,
+    };
+  }
+
+  if (!SESSION_NAME_PATTERN.test(trimmed)) {
+    return {
+      valid: false,
+      error:
+        "Session name contains invalid characters (allowed: letters, numbers, dash, underscore, dot, space)",
+    };
+  }
+
+  return { valid: true, name: trimmed };
+}
+
 // Helper: Get formatted session list
 function getSessionList() {
   return sessionManager.list().map((name) => {
@@ -228,6 +267,19 @@ wss.on("connection", (ws, req) => {
   );
 
   ws.on("message", (message) => {
+    // Reject oversized messages
+    const messageSize =
+      typeof message === "string" ? message.length : message.byteLength;
+    if (messageSize > MAX_MESSAGE_SIZE) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          message: "Message exceeds maximum size of 1MB",
+        }),
+      );
+      return;
+    }
+
     let msg;
     try {
       msg = JSON.parse(message.toString());
@@ -428,19 +480,13 @@ function handleList(ws) {
  * Create a new session
  */
 function handleCreate(ws, name, ephemeral = false) {
-  if (!name || typeof name !== "string") {
-    ws.send(
-      JSON.stringify({ type: "error", message: "Session name is required" }),
-    );
+  const validation = validateSessionName(name);
+  if (!validation.valid) {
+    ws.send(JSON.stringify({ type: "error", message: validation.error }));
     return;
   }
 
-  // Sanitize session name
-  const sanitizedName = name.trim().replace(/[^a-zA-Z0-9-_]/g, "-");
-  if (!sanitizedName) {
-    ws.send(JSON.stringify({ type: "error", message: "Invalid session name" }));
-    return;
-  }
+  const sanitizedName = validation.name;
 
   if (sessionManager.exists(sanitizedName)) {
     ws.send(
@@ -518,6 +564,17 @@ async function handleAttach(ws, name) {
  * Otherwise routes to the active (focused) session.
  */
 function handleInput(ws, data, targetSession = null) {
+  // Reject oversized input data
+  if (typeof data === "string" && data.length > MAX_INPUT_SIZE) {
+    ws.send(
+      JSON.stringify({
+        type: "error",
+        message: "Input data exceeds maximum size of 64KB",
+      }),
+    );
+    return;
+  }
+
   // Use explicit target or fall back to active session
   const sessionName = targetSession || wsActiveSessionMap.get(ws);
   if (!sessionName) {
@@ -634,7 +691,7 @@ function handleKill(ws, name) {
  * Rename a session
  */
 function handleRename(ws, oldName, newName) {
-  if (!oldName || !newName) {
+  if (!oldName || typeof oldName !== "string") {
     ws.send(
       JSON.stringify({
         type: "error",
@@ -644,10 +701,30 @@ function handleRename(ws, oldName, newName) {
     return;
   }
 
-  const sanitizedNewName = newName.trim().replace(/[^a-zA-Z0-9-_]/g, "-");
-  if (!sanitizedNewName) {
+  const validation = validateSessionName(newName);
+  if (!validation.valid) {
+    ws.send(JSON.stringify({ type: "error", message: validation.error }));
+    return;
+  }
+
+  const sanitizedNewName = validation.name;
+
+  if (!sessionManager.exists(oldName)) {
     ws.send(
-      JSON.stringify({ type: "error", message: "Invalid new session name" }),
+      JSON.stringify({
+        type: "error",
+        message: `Session "${oldName}" not found`,
+      }),
+    );
+    return;
+  }
+
+  if (sessionManager.exists(sanitizedNewName)) {
+    ws.send(
+      JSON.stringify({
+        type: "error",
+        message: `Session "${sanitizedNewName}" already exists`,
+      }),
     );
     return;
   }

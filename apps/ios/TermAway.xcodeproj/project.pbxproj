@@ -27,6 +27,9 @@
 		1100000000000018 /* SplitTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000019 /* SplitTerminalView.swift */; };
 		1100000000000020 /* IndependentTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000021 /* IndependentTerminalView.swift */; };
 		BB1E9FAB467DE7DC40365FE2 /* PaneConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000020 /* PaneConnection.swift */; };
+		1100000000000022 /* BiometricManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000022 /* BiometricManager.swift */; };
+		1100000000000023 /* KeyboardShortcutCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000023 /* KeyboardShortcutCommands.swift */; };
+		1100000000000024 /* TerminalSearchBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200000000000024 /* TerminalSearchBar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +54,9 @@
 		2200000000000019 /* SplitTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTerminalView.swift; sourceTree = "<group>"; };
 		2200000000000020 /* PaneConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneConnection.swift; sourceTree = "<group>"; };
 		2200000000000021 /* IndependentTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndependentTerminalView.swift; sourceTree = "<group>"; };
+		2200000000000022 /* BiometricManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricManager.swift; sourceTree = "<group>"; };
+		2200000000000023 /* KeyboardShortcutCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutCommands.swift; sourceTree = "<group>"; };
+		2200000000000024 /* TerminalSearchBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSearchBar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +104,8 @@
 				2200000000000014 /* ShortcutsSettingsView.swift */,
 				2200000000000015 /* ThemeSettingsView.swift */,
 				2200000000000016 /* SettingsView.swift */,
+				2200000000000023 /* KeyboardShortcutCommands.swift */,
+				2200000000000024 /* TerminalSearchBar.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -120,6 +128,7 @@
 				2200000000000010 /* ShortcutsManager.swift */,
 				2200000000000011 /* ThemeManager.swift */,
 				2200000000000018 /* SplitPaneManager.swift */,
+				2200000000000022 /* BiometricManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -225,6 +234,9 @@
 				1100000000000015 /* SettingsView.swift in Sources */,
 				1100000000000020 /* IndependentTerminalView.swift in Sources */,
 				BB1E9FAB467DE7DC40365FE2 /* PaneConnection.swift in Sources */,
+				1100000000000022 /* BiometricManager.swift in Sources */,
+				1100000000000023 /* KeyboardShortcutCommands.swift in Sources */,
+				1100000000000024 /* TerminalSearchBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -372,7 +384,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.termaway.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -403,7 +415,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.termaway.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

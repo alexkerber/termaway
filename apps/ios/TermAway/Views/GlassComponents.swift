@@ -9,6 +9,7 @@ struct GlassCircleButton: View {
     let size: CGFloat
     var iconSize: CGFloat? = nil
     var color: Color = .primary
+    var lightMode: Bool = false
     let action: () -> Void
 
     init(
@@ -16,12 +17,14 @@ struct GlassCircleButton: View {
         size: CGFloat = 38,
         iconSize: CGFloat? = nil,
         color: Color = .primary,
+        lightMode: Bool = false,
         action: @escaping () -> Void
     ) {
         self.icon = icon
         self.size = size
         self.iconSize = iconSize
         self.color = color
+        self.lightMode = lightMode
         self.action = action
     }
 
@@ -37,9 +40,16 @@ struct GlassCircleButton: View {
         }
         .background {
             if #available(iOS 26.0, *) {
-                Circle().fill(.clear).glassEffect(.regular.interactive())
+                ZStack {
+                    // Light backing layer for glass to pick up in light mode
+                    if lightMode {
+                        Circle().fill(Color(.systemBackground))
+                    }
+                    Circle().fill(.clear).glassEffect(.regular.interactive())
+                }
             } else {
                 Circle().fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, lightMode ? .light : .dark)
             }
         }
     }
@@ -50,13 +60,16 @@ struct GlassCircleButton: View {
 /// Use for: status indicators, text buttons in custom overlays
 struct GlassPillButton: View {
     let action: () -> Void
+    var lightMode: Bool = false
     let content: () -> AnyView
 
     init<Content: View>(
+        lightMode: Bool = false,
         action: @escaping () -> Void,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.action = action
+        self.lightMode = lightMode
         self.content = { AnyView(content()) }
     }
 
@@ -71,9 +84,15 @@ struct GlassPillButton: View {
         }
         .background {
             if #available(iOS 26.0, *) {
-                Capsule().fill(.clear).glassEffect(.regular.interactive())
+                ZStack {
+                    if lightMode {
+                        Capsule().fill(Color(.systemBackground))
+                    }
+                    Capsule().fill(.clear).glassEffect(.regular.interactive())
+                }
             } else {
                 Capsule().fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, lightMode ? .light : .dark)
             }
         }
     }
@@ -121,11 +140,12 @@ struct GlassRoundedButton: View {
 /// Shows connection status with green dot and "Connected" text
 struct ConnectionStatusPill: View {
     var isConnected: Bool = true
+    var lightMode: Bool = false
     var action: (() -> Void)? = nil
 
     var body: some View {
         if let action = action {
-            GlassPillButton(action: action) {
+            GlassPillButton(lightMode: lightMode, action: action) {
                 statusContent
             }
         } else {
@@ -134,9 +154,15 @@ struct ConnectionStatusPill: View {
                 .padding(.vertical, 10)
                 .background {
                     if #available(iOS 26.0, *) {
-                        Capsule().fill(.clear).glassEffect()
+                        ZStack {
+                            if lightMode {
+                                Capsule().fill(Color(.systemBackground))
+                            }
+                            Capsule().fill(.clear).glassEffect()
+                        }
                     } else {
                         Capsule().fill(.ultraThinMaterial)
+                            .environment(\.colorScheme, lightMode ? .light : .dark)
                     }
                 }
         }
@@ -144,9 +170,10 @@ struct ConnectionStatusPill: View {
 
     private var statusContent: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(isConnected ? Color.green : Color.red)
-                .frame(width: 8, height: 8)
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(isConnected ? Color.green : Color.red)
+                .symbolEffect(.pulse, isActive: isConnected)
             Text(isConnected ? "Connected" : "Disconnected")
                 .font(.subheadline.weight(.medium))
         }
@@ -213,6 +240,7 @@ struct GlassPillModifier: ViewModifier {
     let id: String
     let namespace: Namespace.ID
     let iconColor: SwiftUI.Color
+    var lightMode: Bool = false
 
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {

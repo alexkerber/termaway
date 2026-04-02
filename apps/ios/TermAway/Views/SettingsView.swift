@@ -5,10 +5,11 @@ struct SettingsView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var shortcutsManager: ShortcutsManager
+    @EnvironmentObject var biometricManager: BiometricManager
 
     var body: some View {
         NavigationStack {
-            List {
+            Form {
                 // Appearance Section
                 Section {
                     Picker("Appearance", selection: $themeManager.appearanceMode) {
@@ -28,6 +29,7 @@ struct SettingsView: View {
                     } label: {
                         HStack {
                             Label("Terminal Theme", systemImage: "paintpalette.fill")
+                                .foregroundStyle(.primary)
                             Spacer()
                             Text(themeManager.currentTheme.name)
                                 .foregroundStyle(.secondary)
@@ -39,6 +41,7 @@ struct SettingsView: View {
                         set: { shortcutsManager.showToolbar = $0 }
                     )) {
                         Label("Shortcuts Toolbar", systemImage: "keyboard")
+                            .foregroundStyle(.primary)
                     }
 
                     if shortcutsManager.showToolbar {
@@ -47,19 +50,45 @@ struct SettingsView: View {
                             set: { shortcutsManager.showKeyboardButton = $0 }
                         )) {
                             Label("Keyboard Button", systemImage: "keyboard.badge.ellipsis")
+                                .foregroundStyle(.primary)
                         }
 
                         NavigationLink {
                             ShortcutsSettingsView()
                         } label: {
                             Label("Edit Shortcuts", systemImage: "slider.horizontal.3")
+                                .foregroundStyle(.primary)
                         }
+                    }
+                    Toggle(isOn: Binding(
+                        get: { UserDefaults.standard.object(forKey: "swipeGesturesEnabled") == nil || UserDefaults.standard.bool(forKey: "swipeGesturesEnabled") },
+                        set: { UserDefaults.standard.set($0, forKey: "swipeGesturesEnabled") }
+                    )) {
+                        Label("Swipe Arrow Keys", systemImage: "hand.draw")
+                            .foregroundStyle(.primary)
                     }
                 } header: {
                     Text("Terminal")
                 } footer: {
                     if shortcutsManager.showToolbar && !shortcutsManager.showKeyboardButton {
                         Text("Keyboard button hidden. Turn on if you need the on-screen keyboard.")
+                    }
+                }
+
+                // Security Section
+                if biometricManager.biometricsAvailable {
+                    Section {
+                        Toggle(isOn: Binding(
+                            get: { biometricManager.biometricEnabled },
+                            set: { biometricManager.biometricEnabled = $0 }
+                        )) {
+                            Label("Require \(biometricManager.biometricTypeName)", systemImage: biometricManager.biometricTypeName == "Face ID" ? "faceid" : "touchid")
+                                .foregroundStyle(.primary)
+                        }
+                    } header: {
+                        Text("Security")
+                    } footer: {
+                        Text("Lock TermAway when you leave the app. Unlock with \(biometricManager.biometricTypeName).")
                     }
                 }
 
@@ -78,32 +107,25 @@ struct SettingsView: View {
                 // Connection Info Section
                 Section {
                     if let serverURL = connectionManager.serverURL {
-                        HStack {
-                            Text("Server")
-                            Spacer()
+                        LabeledContent("Server") {
                             Text(serverURL)
-                                .foregroundStyle(.secondary)
                                 .font(.footnote)
                         }
                     }
 
-                    HStack {
-                        Text("Status")
-                        Spacer()
+                    LabeledContent("Status") {
                         HStack(spacing: 6) {
-                            Circle()
-                                .fill(connectionManager.isConnected ? .green : .red)
-                                .frame(width: 8, height: 8)
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(connectionManager.isConnected ? Color.green : Color.red)
+                                .symbolEffect(.pulse, isActive: connectionManager.isConnected)
                             Text(connectionManager.isConnected ? "Connected" : "Disconnected")
-                                .foregroundStyle(.secondary)
                         }
                     }
 
-                    HStack {
-                        Text("Windows")
-                        Spacer()
+                    LabeledContent("Windows") {
                         Text("\(connectionManager.sessions.count)")
-                            .foregroundStyle(.secondary)
+                            .contentTransition(.numericText())
                     }
                 } header: {
                     Text("Connection")
@@ -150,5 +172,8 @@ struct SettingsView: View {
                 }
             }
         }
+        .presentationBackground(.regularMaterial)
+        .presentationCornerRadius(20)
+        .preferredColorScheme(themeManager.appearanceMode.colorScheme)
     }
 }

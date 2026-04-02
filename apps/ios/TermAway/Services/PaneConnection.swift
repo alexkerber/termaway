@@ -25,10 +25,17 @@ class PaneConnection: ObservableObject {
 
     /// Connect to the server and create a new session
     func connect(to url: URL, authToken: String? = nil) {
+        // Guard against double-connect
+        guard !isConnected else { return }
+
         serverURL = url
         storedAuthToken = authToken
 
         print("PaneConnection: Connecting to \(url)")
+
+        // Clean up any previous connection
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        urlSession?.invalidateAndCancel()
 
         let config = URLSessionConfiguration.default
         urlSession = URLSession(configuration: config)
@@ -37,13 +44,14 @@ class PaneConnection: ObservableObject {
 
         // Start receiving messages
         receiveMessage()
-        isConnected = true
+        // Note: isConnected is set when server confirms via auth-required message
     }
 
     /// Disconnect from the server
     func disconnect() {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
+        urlSession?.invalidateAndCancel()
         urlSession = nil
         isConnected = false
         sessionName = nil
@@ -123,6 +131,7 @@ class PaneConnection: ObservableObject {
             }
 
         case "auth-required":
+            isConnected = true
             let required = json["required"] as? Bool ?? false
             print("PaneConnection: auth-required, required=\(required)")
             if required {

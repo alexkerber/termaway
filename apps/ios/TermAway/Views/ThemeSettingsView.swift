@@ -6,7 +6,7 @@ struct ThemeSettingsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            Form {
                 Section {
                     ForEach(TerminalTheme.presets) { theme in
                         ThemePreviewRow(
@@ -28,10 +28,10 @@ struct ThemeSettingsView: View {
                             Text("\(Int(themeManager.fontSize))pt")
                                 .foregroundColor(.secondary)
                                 .monospacedDigit()
+                                .contentTransition(.numericText())
                         }
 
                         Slider(value: $themeManager.fontSize, in: 10...24, step: 1)
-                            .tint(.blue)
                     }
                     .padding(.vertical, 4)
                 } header: {
@@ -63,7 +63,7 @@ struct ThemeSettingsView: View {
             }
             .navigationTitle("Appearance")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .modifier(ToolbarGlassModifier())
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -108,7 +108,7 @@ struct ThemePreviewRow: View {
 
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
                         .fontWeight(.semibold)
                 }
             }

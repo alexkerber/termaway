@@ -44,10 +44,12 @@ struct IndependentTerminalViewRepresentable: UIViewRepresentable {
         let theme = themeManager.currentTheme
         terminalView.font = UIFont.monospacedSystemFont(ofSize: themeManager.fontSize, weight: .regular)
         terminalView.nativeForegroundColor = theme.foregroundColor
+        terminalView.caretColor = theme.cursorColor
         terminalView.nativeBackgroundColor = theme.backgroundColor
 
         // Hide iOS keyboard accessory bar
         terminalView.inputAccessoryView = nil
+        terminalView.overrideUserInterfaceStyle = themeManager.isChromeLightMode ? .light : .dark
 
         // Set up the terminal delegate
         terminalView.terminalDelegate = context.coordinator
@@ -72,7 +74,9 @@ struct IndependentTerminalViewRepresentable: UIViewRepresentable {
         let theme = themeManager.currentTheme
         uiView.font = UIFont.monospacedSystemFont(ofSize: themeManager.fontSize, weight: .regular)
         uiView.nativeForegroundColor = theme.foregroundColor
+        uiView.caretColor = theme.cursorColor
         uiView.nativeBackgroundColor = theme.backgroundColor
+        uiView.overrideUserInterfaceStyle = themeManager.isChromeLightMode ? .light : .dark
 
         // Handle focus changes
         if isFocused && !uiView.isFirstResponder {
@@ -97,15 +101,16 @@ struct IndependentTerminalViewRepresentable: UIViewRepresentable {
                 guard let tv = terminalView else { return }
 
                 // Set up output handler and connect on main actor
-                Task { @MainActor in
-                    paneConnection.onOutput = { [weak tv] data in
+                Task { @MainActor [weak self, weak tv] in
+                    guard let self = self else { return }
+                    self.paneConnection.onOutput = { [weak tv] data in
                         tv?.feed(text: data)
                     }
 
                     // Connect if we haven't already
-                    if !hasConnected {
-                        connectToServer()
-                        hasConnected = true
+                    if !self.hasConnected {
+                        self.connectToServer()
+                        self.hasConnected = true
                     }
                 }
             }

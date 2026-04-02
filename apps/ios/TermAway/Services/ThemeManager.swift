@@ -116,4 +116,19 @@ class ThemeManager: ObservableObject {
     var terminalOverlayColor: Color {
         isCurrentThemeLight ? .black : .white
     }
+
+    /// Whether the app chrome (top bar, toolbar) should use light styling.
+    /// True when appearance mode is explicitly Light, or System and the terminal theme is light.
+    var isChromeLightMode: Bool {
+        switch appearanceMode {
+        case .light: return true
+        case .dark: return false
+        case .system: return isCurrentThemeLight
+        }
+    }
+
+    /// Icon color for app chrome (top bar, toolbar) — adapts to appearance mode
+    var chromeIconColor: Color {
+        isChromeLightMode ? .black : .white
+    }
 }

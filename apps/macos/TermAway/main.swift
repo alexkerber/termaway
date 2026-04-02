@@ -6,7 +6,7 @@ import UserNotifications
 import Combine
 
 // MARK: - Version
-let appVersion = "1.1.4"
+let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
 
 // MARK: - Update Checker
 class UpdateChecker {
