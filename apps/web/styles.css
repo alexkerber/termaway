@@ -23,6 +23,8 @@
   --tab-active: #ff6b35;
   --tab-hover: #21262d;
   --toolbar-bg: #21262d;
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 /* Light theme */
@@ -43,6 +45,28 @@
   --tab-active: #e55a2b;
   --tab-hover: #f3f4f6;
   --toolbar-bg: #f3f4f6;
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+/* Smooth theme transitions */
+html,
+html *,
+html *::before,
+html *::after {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+/* Exclude terminal and performance-sensitive elements from theme transition */
+.xterm,
+.xterm *,
+#terminal *,
+.toolbar-btn:active,
+.toolbar-btn:active * {
+  transition: none !important;
 }
 
 html,
@@ -494,10 +518,10 @@ body {
   position: fixed;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 4px 0;
-  min-width: 150px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 160px;
+  box-shadow: var(--shadow-lg);
   z-index: 1000;
 }
 
@@ -528,10 +552,14 @@ body {
   right: 0;
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1001;
+  opacity: 1;
+  transition: opacity 0.2s ease;
 }
 
 #modal-overlay.hidden {
@@ -545,6 +573,7 @@ body {
   padding: 24px;
   min-width: 320px;
   max-width: 90vw;
+  box-shadow: var(--shadow-lg);
 }
 
 #modal h3 {
@@ -914,10 +943,129 @@ body {
   display: none;
 }
 
+/* Settings backdrop overlay */
+#settings-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 1001;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+#settings-backdrop.hidden {
+  display: none;
+}
+
+/* Toast notifications */
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: white;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: toast-in 0.25s ease forwards;
+}
+
+.toast.toast-out {
+  animation: toast-out 0.2s ease forwards;
+}
+
+.toast.toast-error {
+  background-color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+
+.toast.toast-success {
+  background-color: var(--accent-success);
+  border-color: var(--accent-success);
+}
+
+.toast.toast-info {
+  color: var(--text-primary);
+}
+
+@keyframes toast-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Focus visible styles for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Remove outline for mouse clicks */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Tab close button - always show on touch devices */
+@media (hover: none) and (pointer: coarse) {
+  .tab .close-tab {
+    display: block;
+  }
+}
+
 /* Settings panel overlay for mobile */
 @media (max-width: 480px) {
   #settings-panel {
     width: 100%;
     max-width: 100%;
+  }
+
+  #toast-container {
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    transform: none;
+  }
+
+  .toast {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* Hide status text on very narrow screens, keep the dot */
+@media (max-width: 360px) {
+  #connection-status .status-text {
+    display: none;
+  }
+
+  #connection-status {
+    padding: 6px 8px;
   }
 }

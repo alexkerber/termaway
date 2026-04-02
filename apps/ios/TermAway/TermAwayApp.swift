@@ -40,28 +40,140 @@ extension Color {
     }
 }
 
+// MARK: - Multi-Window Constants
+
+/// NSUserActivity type used to track which session a window is displaying.
+/// Each iPadOS window stores this activity so the system can restore it.
+let termAwaySessionActivityType = "app.termaway.session"
+
+// MARK: - Shared State (Single Instance Across All Scenes)
+
+/// These managers are shared across all iPadOS windows.
+/// ConnectionManager maintains one WebSocket connection; each window attaches
+/// to whichever session it needs independently.
+///
+/// Wrapped in a @MainActor enum to satisfy actor isolation for the ObservableObject inits.
+@MainActor
+enum SharedState {
+    static let connectionManager = ConnectionManager()
+    static let shortcutsManager = ShortcutsManager()
+    static let themeManager = ThemeManager()
+    static let biometricManager = BiometricManager()
+    static let keyboardShortcutState = KeyboardShortcutState()
+}
+
 @main
 struct TermAwayApp: App {
-    @StateObject private var connectionManager = ConnectionManager()
-    @StateObject private var shortcutsManager = ShortcutsManager()
-    @StateObject private var themeManager = ThemeManager()
-    @StateObject private var splitPaneManager = SplitPaneManager()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(connectionManager)
-                .environmentObject(shortcutsManager)
-                .environmentObject(themeManager)
-                .environmentObject(splitPaneManager)
-                .preferredColorScheme(themeManager.appearanceMode.colorScheme)
+            SceneRootView()
+                .environmentObject(SharedState.connectionManager)
+                .environmentObject(SharedState.shortcutsManager)
+                .environmentObject(SharedState.themeManager)
+                .environmentObject(SharedState.biometricManager)
+                .environmentObject(SharedState.keyboardShortcutState)
+                .tint(.brandOrange)
                 .onAppear {
-                    connectionManager.requestNotificationPermissions()
-                    // Clear saved layout when session is removed (killed or exited)
-                    connectionManager.onSessionRemoved = { [weak splitPaneManager] sessionName in
-                        splitPaneManager?.clearSavedLayout(for: sessionName)
-                    }
+                    SharedState.connectionManager.requestNotificationPermissions()
                 }
         }
+        .commands {
+            KeyboardShortcutCommands(
+                connectionManager: SharedState.connectionManager,
+                shortcutState: SharedState.keyboardShortcutState
+            )
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .background, .inactive:
+                SharedState.biometricManager.lockApp()
+            case .active:
+                SharedState.biometricManager.authenticate()
+            @unknown default:
+                break
+            }
+        }
     }
+}
+
+// MARK: - Per-Scene Root View
+
+/// Each iPadOS window gets its own SceneRootView with an independent
+/// SplitPaneManager and session binding. The WebSocket connection is shared
+/// so all windows talk to the same server without extra connections.
+struct SceneRootView: View {
+    @EnvironmentObject var connectionManager: ConnectionManager
+    @EnvironmentObject var themeManager: ThemeManager
+
+    /// Each window gets its own SplitPaneManager for independent pane layouts
+    @StateObject private var splitPaneManager = SplitPaneManager()
+
+    /// The session name this particular window is tracking.
+    /// Persisted via NSUserActivity for window restoration.
+    @State private var windowSessionName: String?
+
+    /// Registration ID for session-removed callback
+    @State private var sessionRemovedCallbackId: UUID?
+
+    var body: some View {
+        ContentView(windowSessionName: $windowSessionName)
+            .environmentObject(splitPaneManager)
+            .preferredColorScheme(themeManager.appearanceMode.colorScheme)
+            .onAppear {
+                // Wire up the callback for clearing saved layouts when sessions are removed
+                sessionRemovedCallbackId = connectionManager.registerSessionRemovedCallback { [weak splitPaneManager] sessionName in
+                    splitPaneManager?.clearSavedLayout(for: sessionName)
+                }
+            }
+            .onDisappear {
+                if let id = sessionRemovedCallbackId {
+                    connectionManager.unregisterSessionRemovedCallback(id)
+                }
+            }
+            // Restore session when the system re-creates this window
+            .onContinueUserActivity(termAwaySessionActivityType) { activity in
+                if let sessionName = activity.userInfo?["sessionName"] as? String {
+                    windowSessionName = sessionName
+                    if connectionManager.isConnected && connectionManager.isAuthenticated {
+                        connectionManager.attachToSession(sessionName)
+                    }
+                }
+            }
+            // Advertise current session so iPadOS can restore this window
+            .userActivity(termAwaySessionActivityType) { activity in
+                let name = windowSessionName ?? connectionManager.currentSession?.name
+                activity.isEligibleForHandoff = false
+                activity.needsSave = true
+                if let name = name {
+                    activity.userInfo = ["sessionName": name]
+                    activity.title = "TermAway — \(name)"
+                }
+            }
+    }
+}
+
+// MARK: - Open in New Window Helper
+
+/// Request iPadOS to open a new window showing the given session.
+/// Uses UIKit scene APIs which are available on iPad.
+func openSessionInNewWindow(_ sessionName: String) {
+    let activity = NSUserActivity(activityType: termAwaySessionActivityType)
+    activity.userInfo = ["sessionName": sessionName]
+    activity.title = "TermAway — \(sessionName)"
+
+    let options = UIScene.ActivationRequestOptions()
+    options.requestingScene = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .first
+
+    UIApplication.shared.requestSceneSessionActivation(
+        nil,  // nil = create a new scene session
+        userActivity: activity,
+        options: options,
+        errorHandler: { error in
+            print("Failed to open new window: \(error.localizedDescription)")
+        }
+    )
 }

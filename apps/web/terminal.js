@@ -22,12 +22,14 @@ const SCROLLBACK_LINES = 10000;
 const DEFAULT_FONT_SIZE = 14;
 const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 24;
+const RESIZE_DEBOUNCE_MS = 150;
 
 // Settings state
 let currentFontSize =
   parseInt(localStorage.getItem("fontSize")) || DEFAULT_FONT_SIZE;
 let currentTheme = localStorage.getItem("theme") || "dark";
 let activeModifiers = { ctrl: false, alt: false };
+let resizeTimer = null;
 let quickCommands = JSON.parse(localStorage.getItem("quickCommands")) || [
   "ls -la",
   "git status",
@@ -50,6 +52,8 @@ const modalCancel = document.getElementById("modal-cancel");
 const modalConfirm = document.getElementById("modal-confirm");
 const contextMenu = document.getElementById("context-menu");
 const scrollToBottomBtn = document.getElementById("scroll-to-bottom");
+const toastContainer = document.getElementById("toast-container");
+const settingsBackdrop = document.getElementById("settings-backdrop");
 
 // Theme definitions
 const darkTheme = {
@@ -128,6 +132,20 @@ function initTerminal() {
   term.open(terminalContainer);
   fitAddon.fit();
 
+  // WebGL renderer for better performance (falls back to canvas if unavailable)
+  try {
+    if (window.WebglAddon) {
+      const webglAddon = new window.WebglAddon.WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+        console.warn("WebGL context lost, falling back to canvas renderer");
+      });
+      term.loadAddon(webglAddon);
+    }
+  } catch (e) {
+    console.warn("WebGL addon failed to load, using canvas renderer:", e);
+  }
+
   // Handle terminal input
   term.onData((data) => {
     if (ws && ws.readyState === WebSocket.OPEN && currentSession) {
@@ -142,11 +160,14 @@ function initTerminal() {
     }
   });
 
-  // Handle window resize
+  // Handle window resize (debounced to avoid excessive reflows)
   window.addEventListener("resize", () => {
-    if (fitAddon) {
-      fitAddon.fit();
-    }
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (fitAddon) {
+        fitAddon.fit();
+      }
+    }, RESIZE_DEBOUNCE_MS);
   });
 
   // Prevent browser shortcuts when terminal is focused
@@ -248,6 +269,21 @@ function updateScrollButton() {
   }
 }
 
+// Toast notification system
+function showToast(message, type = "info", duration = 3000) {
+  if (!toastContainer) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  toast.setAttribute("role", "alert");
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add("toast-out");
+    toast.addEventListener("animationend", () => toast.remove());
+  }, duration);
+}
+
 // WebSocket connection management
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -343,6 +379,10 @@ function updateConnectionStatus(status) {
         // Re-init Lucide for newly visible button
         if (window.lucide) lucide.createIcons({ nodes: [disconnectBtn] });
       }
+      // Show toast only on reconnection (not first connect)
+      if (reconnectAttempts > 0) {
+        showToast("Reconnected", "success", 2000);
+      }
       break;
     case "disconnected":
       statusText.textContent = "Disconnected";
@@ -353,8 +393,9 @@ function updateConnectionStatus(status) {
       if (disconnectBtn) disconnectBtn.style.display = "none";
       break;
     case "failed":
-      statusText.textContent = "Failed - Tap to retry";
+      statusText.textContent = "Failed — Tap to retry";
       if (disconnectBtn) disconnectBtn.style.display = "none";
+      showToast("Connection failed — tap status to retry", "error", 4000);
       break;
   }
 }
@@ -460,6 +501,10 @@ function handleMessage(msg) {
           `\r\n\x1b[33m[Session "${msg.name}" exited with code ${msg.exitCode}]\x1b[0m\r\n`,
         );
         currentSession = null;
+        showToast(
+          `Session "${msg.name}" exited (code ${msg.exitCode})`,
+          "info",
+        );
       }
       break;
 
@@ -473,9 +518,13 @@ function handleMessage(msg) {
           term.clear();
         }
         updateView();
+        showToast("Session not found", "error");
       } else if (term && currentSession) {
         // Show other errors in terminal
         term.write(`\r\n\x1b[31m[Error: ${msg.message}]\x1b[0m\r\n`);
+        showToast(msg.message, "error");
+      } else {
+        showToast(msg.message || "An error occurred", "error");
       }
       break;
   }
@@ -542,9 +591,14 @@ function renderTabs() {
   tabsContainer.innerHTML = "";
 
   for (const session of sessions) {
+    const isActive = session.name === currentSession;
     const tab = document.createElement("div");
-    tab.className = "tab" + (session.name === currentSession ? " active" : "");
+    tab.className = "tab" + (isActive ? " active" : "");
     tab.dataset.session = session.name;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    tab.setAttribute("aria-label", session.name);
+    tab.setAttribute("tabindex", isActive ? "0" : "-1");
 
     const nameSpan = document.createElement("span");
     nameSpan.className = "session-name";
@@ -553,9 +607,11 @@ function renderTabs() {
     const closeBtn = document.createElement("span");
     closeBtn.className = "close-tab";
     closeBtn.textContent = "×";
+    closeBtn.setAttribute("role", "button");
+    closeBtn.setAttribute("aria-label", `Close ${session.name}`);
     closeBtn.onclick = (e) => {
       e.stopPropagation();
-      killSession(session.name);
+      confirmKillSession(session.name);
     };
 
     tab.appendChild(nameSpan);
@@ -577,9 +633,9 @@ function renderTabs() {
 
   // Update document title
   if (currentSession) {
-    document.title = `${currentSession} - Web Terminal`;
+    document.title = `${currentSession} — TermAway`;
   } else {
-    document.title = "Web Terminal";
+    document.title = "TermAway";
   }
 }
 
@@ -638,6 +694,18 @@ function killSession(name) {
   }
 }
 
+function confirmKillSession(name) {
+  showModal("Kill Session", `Type "${name}" to confirm`, "Kill", (value) => {
+    if (value === name) {
+      killSession(name);
+    } else {
+      showToast("Session name did not match", "error");
+    }
+  });
+  // Style as destructive action
+  modalConfirm.style.backgroundColor = "var(--accent-danger)";
+}
+
 function renameSession(oldName, newName) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "rename", oldName, newName }));
@@ -650,6 +718,7 @@ let modalCallback = null;
 function showModal(title, placeholder, confirmText, callback) {
   modalTitle.textContent = title;
   modalInput.placeholder = placeholder;
+  modalInput.setAttribute("aria-label", placeholder);
   modalInput.value = "";
   modalConfirm.textContent = confirmText;
   modalCallback = callback;
@@ -657,9 +726,30 @@ function showModal(title, placeholder, confirmText, callback) {
   modalInput.focus();
 }
 
+// Focus trap for modal - keep Tab cycling within modal elements
+modalOverlay.addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const focusable = [modalInput, modalCancel, modalConfirm];
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey) {
+    if (document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    }
+  } else {
+    if (document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+});
+
 function hideModal() {
   modalOverlay.classList.add("hidden");
   modalCallback = null;
+  // Reset confirm button style (may have been set to danger)
+  modalConfirm.style.backgroundColor = "";
   // Return focus to terminal
   if (term) {
     term.focus();
@@ -732,7 +822,7 @@ contextMenu.onclick = (e) => {
       });
       break;
     case "kill":
-      killSession(contextMenuTarget);
+      confirmKillSession(contextMenuTarget);
       break;
   }
 
@@ -806,6 +896,7 @@ function setFontSize(size) {
 function showSettings() {
   if (settingsPanel) {
     settingsPanel.classList.remove("hidden");
+    if (settingsBackdrop) settingsBackdrop.classList.remove("hidden");
     renderQuickCommands();
   }
 }
@@ -814,6 +905,7 @@ function hideSettings() {
   if (settingsPanel) {
     settingsPanel.classList.add("hidden");
   }
+  if (settingsBackdrop) settingsBackdrop.classList.add("hidden");
   if (term) term.focus();
 }
 
@@ -946,6 +1038,10 @@ function toggleToolbar() {
   }
   if (toolbarToggle) {
     toolbarToggle.classList.toggle("active", toolbarVisible);
+    toolbarToggle.setAttribute(
+      "aria-pressed",
+      toolbarVisible ? "true" : "false",
+    );
   }
   localStorage.setItem("toolbarVisible", toolbarVisible);
   // Refit terminal after toolbar toggle
@@ -961,6 +1057,10 @@ function applyToolbarState() {
   }
   if (toolbarToggle) {
     toolbarToggle.classList.toggle("active", toolbarVisible);
+    toolbarToggle.setAttribute(
+      "aria-pressed",
+      toolbarVisible ? "true" : "false",
+    );
   }
 }
 
@@ -982,6 +1082,9 @@ if (settingsBtnHeader) {
 }
 if (settingsClose) {
   settingsClose.onclick = hideSettings;
+}
+if (settingsBackdrop) {
+  settingsBackdrop.onclick = hideSettings;
 }
 
 // Font size slider
@@ -1013,9 +1116,8 @@ if (addCmdBtn && newCmdInput) {
 const disconnectBtn = document.getElementById("disconnect-btn");
 if (disconnectBtn) {
   disconnectBtn.onclick = () => {
-    if (confirm("Disconnect from server?")) {
-      disconnect();
-    }
+    disconnect();
+    showToast("Disconnected from server", "info");
   };
 }
 

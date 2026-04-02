@@ -11,7 +11,7 @@ struct ServerSettingsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            Form {
                 Section {
                     HStack {
                         Image(systemName: "link")
@@ -78,7 +78,7 @@ struct ServerSettingsView: View {
             }
             .navigationTitle("Server Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .modifier(ToolbarGlassModifier())
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
@@ -140,7 +140,7 @@ struct DiscoveredServersView: View {
                         Spacer()
                         if serverURL == server.url {
                             Image(systemName: "checkmark")
-                                .foregroundColor(.blue)
+                                .foregroundColor(.accentColor)
                         }
                     }
                 }

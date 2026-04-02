@@ -19,6 +19,7 @@ class ConnectionManager: ObservableObject {
     private var webSocket: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var reconnectTask: Task<Void, Never>?
+    private var connectTimeoutTask: Task<Void, Never>?
     private var shouldAutoReconnect = false
     private let maxReconnectAttempts = 10
     private var appLifecycleObserver: NSObjectProtocol?
@@ -50,8 +51,19 @@ class ConnectionManager: ObservableObject {
     /// The currently active session for input routing (focused pane's session)
     @Published var activeSessionName: String?
 
-    /// Callback when a session is removed (killed or exited) - used to clear saved layouts
-    var onSessionRemoved: ((String) -> Void)?
+    /// Callbacks when a session is removed (killed or exited) - used to clear saved layouts.
+    /// Multiple windows can register their own callbacks.
+    private var sessionRemovedCallbacks: [UUID: (String) -> Void] = [:]
+
+    func registerSessionRemovedCallback(_ callback: @escaping (String) -> Void) -> UUID {
+        let id = UUID()
+        sessionRemovedCallbacks[id] = callback
+        return id
+    }
+
+    func unregisterSessionRemovedCallback(_ id: UUID) {
+        sessionRemovedCallbacks.removeValue(forKey: id)
+    }
 
     /// Register a terminal output handler for a specific session
     func registerOutputHandler(for sessionName: String, handler: @escaping (String) -> Void) -> UUID {
@@ -182,8 +194,10 @@ class ConnectionManager: ObservableObject {
 
         // Timeout if server doesn't respond within 5 seconds
         // We only mark as connected when we receive auth-required message
-        Task {
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
             // If still connecting after 5s, the server isn't responding
             if isConnecting && !isConnected {
                 isConnecting = false
@@ -199,6 +213,8 @@ class ConnectionManager: ObservableObject {
         shouldAutoReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
         isReconnecting = false
         reconnectAttempts = 0
 
@@ -294,6 +310,10 @@ class ConnectionManager: ObservableObject {
             return
         }
 
+        // Cancel any existing connection attempt
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        urlSession?.invalidateAndCancel()
+
         isConnecting = true
 
         // Clear stale session data - server will send fresh list
@@ -315,6 +335,8 @@ class ConnectionManager: ObservableObject {
         // Connection is confirmed when we receive auth-required message
         try? await Task.sleep(nanoseconds: 5_000_000_000)
 
+        guard !Task.isCancelled else { return }
+
         // If still connecting after 5s, the server isn't responding
         if isConnecting && !isConnected {
             isConnecting = false
@@ -329,6 +351,8 @@ class ConnectionManager: ObservableObject {
         reconnectAttempts = 0
         shouldAutoReconnect = true
         isReconnecting = false
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
         lastError = nil
         connect()
     }
@@ -472,7 +496,7 @@ class ConnectionManager: ObservableObject {
             }
             sessionStates.removeValue(forKey: name)
             sessions.removeAll { $0.name == name }
-            onSessionRemoved?(name)
+            for callback in sessionRemovedCallbacks.values { callback(name) }
 
         case .renamed(let oldName, let newName):
             if currentSession?.name == oldName {
@@ -494,7 +518,7 @@ class ConnectionManager: ObservableObject {
             if currentSession?.name == name {
                 currentSession = nil
             }
-            onSessionRemoved?(name)
+            for callback in sessionRemovedCallbacks.values { callback(name) }
 
         case .error(let message):
             lastError = message

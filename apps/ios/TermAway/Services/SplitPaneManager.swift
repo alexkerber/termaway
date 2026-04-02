@@ -276,6 +276,38 @@ class SplitPaneManager: ObservableObject {
         focusedPaneId = paneId
     }
 
+    /// Focus the next pane (cycles forward)
+    func focusNextPane() {
+        guard panes.count > 1 else { return }
+        guard let currentId = focusedPaneId,
+              let currentIndex = panes.firstIndex(where: { $0.id == currentId }) else {
+            focusedPaneId = panes.first?.id
+            return
+        }
+        let nextIndex = (currentIndex + 1) % panes.count
+        focusedPaneId = panes[nextIndex].id
+    }
+
+    /// Focus the previous pane (cycles backward)
+    func focusPreviousPane() {
+        guard panes.count > 1 else { return }
+        guard let currentId = focusedPaneId,
+              let currentIndex = panes.firstIndex(where: { $0.id == currentId }) else {
+            focusedPaneId = panes.first?.id
+            return
+        }
+        let prevIndex = (currentIndex - 1 + panes.count) % panes.count
+        focusedPaneId = panes[prevIndex].id
+    }
+
+    /// Cycle through split layouts in order
+    func cycleLayout() -> SplitLayout {
+        let allLayouts = SplitLayout.allCases
+        guard let currentIndex = allLayouts.firstIndex(of: layout) else { return layout }
+        let nextIndex = (currentIndex + 1) % allLayouts.count
+        return allLayouts[nextIndex]
+    }
+
     /// Attach a session to a pane
     func attachSession(_ sessionName: String, to paneId: UUID) {
         guard let currentSession = currentSessionName else { return }

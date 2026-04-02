@@ -172,10 +172,12 @@ struct PaneTerminalViewRepresentable: UIViewRepresentable {
         let theme = themeManager.currentTheme
         terminalView.font = UIFont.monospacedSystemFont(ofSize: themeManager.fontSize, weight: .regular)
         terminalView.nativeForegroundColor = theme.foregroundColor
+        terminalView.caretColor = theme.cursorColor
         terminalView.nativeBackgroundColor = theme.backgroundColor
 
         // Hide iOS keyboard accessory bar
         terminalView.inputAccessoryView = nil
+        terminalView.overrideUserInterfaceStyle = themeManager.isChromeLightMode ? .light : .dark
 
         // Set up the terminal delegate
         terminalView.terminalDelegate = context.coordinator
@@ -218,7 +220,9 @@ struct PaneTerminalViewRepresentable: UIViewRepresentable {
         let theme = themeManager.currentTheme
         uiView.font = UIFont.monospacedSystemFont(ofSize: themeManager.fontSize, weight: .regular)
         uiView.nativeForegroundColor = theme.foregroundColor
+        uiView.caretColor = theme.cursorColor
         uiView.nativeBackgroundColor = theme.backgroundColor
+        uiView.overrideUserInterfaceStyle = themeManager.isChromeLightMode ? .light : .dark
 
         // Handle focus changes - become first responder if focused
         // Use a brief delay to ensure view hierarchy is stable after SwiftUI updates
@@ -273,10 +277,11 @@ struct PaneTerminalViewRepresentable: UIViewRepresentable {
 
             // If immediate attempt failed, try again after a brief delay
             if !success {
+                let session = sessionName
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak tv] in
                     guard let tv = tv, !tv.isFirstResponder else { return }
                     let retrySuccess = tv.becomeFirstResponder()
-                    print("PaneTerminal[\(self.sessionName)]: handleTap retry - becomeFirstResponder = \(retrySuccess)")
+                    print("PaneTerminal[\(session)]: handleTap retry - becomeFirstResponder = \(retrySuccess)")
                 }
             }
         }

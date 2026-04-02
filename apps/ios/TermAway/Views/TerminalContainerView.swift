@@ -13,7 +13,7 @@ struct TerminalContainerView: View {
     @Namespace private var scrollButtonNamespace
 
     private var iconColor: SwiftUI.Color {
-        themeManager.terminalOverlayColor
+        themeManager.chromeIconColor
     }
 
     /// Calculate bottom padding based on keyboard and toolbar state
@@ -30,7 +30,7 @@ struct TerminalContainerView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                // Terminal with top padding for app bar
+                // Terminal with top padding for app bar (extra when search visible)
                 // Bottom padding adjusts for keyboard when visible
                 TerminalViewRepresentable(
                     connectionManager: connectionManager,
@@ -79,6 +79,12 @@ struct TerminalContainerView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardHeight = 0
         }
+        .onReceive(NotificationCenter.default.publisher(for: .dismissTerminalSearch)) { _ in
+            // Return focus to the terminal when search is dismissed from ContentView
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                terminalView?.becomeFirstResponder()
+            }
+        }
     }
 
     @ViewBuilder
@@ -87,6 +93,7 @@ struct TerminalContainerView: View {
             icon: "arrow.down.to.line",
             size: 44,
             color: iconColor,
+            lightMode: themeManager.isChromeLightMode,
             action: { scrollToBottom() }
         )
     }
@@ -113,6 +120,12 @@ struct TerminalContainerView: View {
         let bottomOffset = CGPoint(x: 0, y: max(terminal.contentSize.height - terminal.bounds.height, 0))
         terminal.setContentOffset(bottomOffset, animated: true)
     }
+
+}
+
+// MARK: - Search Notification
+extension Notification.Name {
+    static let toggleTerminalSearch = Notification.Name("toggleTerminalSearch")
 }
 
 // MARK: - Shortcuts Toolbar
@@ -127,9 +140,9 @@ struct ShortcutsToolbarView: View {
     @State private var keyboardHeight: CGFloat = 0
     @Namespace private var toolbarNamespace
 
-    // Icon color adapts to terminal background
+    // Icon color adapts to appearance mode
     private var iconColor: SwiftUI.Color {
-        themeManager.terminalOverlayColor
+        themeManager.chromeIconColor
     }
 
     var body: some View {
@@ -171,8 +184,17 @@ struct ShortcutsToolbarView: View {
             GlassEffectContainer {
                 toolbarLayout
             }
+            .background {
+                // Light backing layer — glass picks this up and renders light naturally
+                if themeManager.isChromeLightMode {
+                    Capsule()
+                        .fill(Color(.systemBackground))
+                        .padding(.horizontal, 16)
+                }
+            }
         } else {
             toolbarLayout
+                .environment(\.colorScheme, themeManager.isChromeLightMode ? .light : .dark)
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isToolbarVisible)
         }
     }
@@ -202,6 +224,7 @@ struct ShortcutsToolbarView: View {
             icon: isToolbarVisible ? "chevron.down" : "chevron.up",
             size: 40,
             color: iconColor,
+            lightMode: themeManager.isChromeLightMode,
             action: {
                 withAnimation(liquidAnimation) {
                     isToolbarVisible.toggle()
@@ -375,6 +398,30 @@ struct ShortcutKeyButtonStyle: ButtonStyle {
 }
 
 struct TerminalViewRepresentable: UIViewRepresentable {
+    /// Improved ANSI 16-color palette with readable blue on dark backgrounds.
+    /// SwiftTerm.Color uses UInt16 (0-65535). Multiply 8-bit values by 257.
+    private static func c(_ r: UInt16, _ g: UInt16, _ b: UInt16) -> SwiftTerm.Color {
+        SwiftTerm.Color(red: r * 257, green: g * 257, blue: b * 257)
+    }
+    static let improvedAnsiPalette: [SwiftTerm.Color] = [
+        c(0, 0, 0),         // 0  black
+        c(153, 0, 1),       // 1  red
+        c(0, 166, 3),       // 2  green
+        c(153, 153, 0),     // 3  yellow
+        c(80, 120, 255),    // 4  blue (brighter, readable on dark)
+        c(178, 0, 178),     // 5  magenta
+        c(0, 165, 178),     // 6  cyan
+        c(191, 191, 191),   // 7  white
+        c(138, 137, 138),   // 8  bright black
+        c(229, 0, 1),       // 9  bright red
+        c(0, 216, 0),       // 10 bright green
+        c(229, 229, 0),     // 11 bright yellow
+        c(100, 149, 255),   // 12 bright blue (readable on dark)
+        c(229, 0, 229),     // 13 bright magenta
+        c(0, 229, 229),     // 14 bright cyan
+        c(229, 229, 229),   // 15 bright white
+    ]
+
     let connectionManager: ConnectionManager
     @ObservedObject var themeManager: ThemeManager
     @Binding var terminalView: TerminalView?
@@ -387,10 +434,17 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         let theme = themeManager.currentTheme
         terminalView.font = UIFont.monospacedSystemFont(ofSize: themeManager.fontSize, weight: .regular)
         terminalView.nativeForegroundColor = theme.foregroundColor
+        terminalView.caretColor = theme.cursorColor
         terminalView.nativeBackgroundColor = theme.backgroundColor
+
+        // Install improved ANSI palette with readable blue on dark backgrounds
+        terminalView.installColors(Self.improvedAnsiPalette)
 
         // Hide iOS keyboard accessory bar - we have our own toolbar
         terminalView.inputAccessoryView = nil
+
+        // Keyboard appearance follows chrome mode
+        terminalView.overrideUserInterfaceStyle = themeManager.isChromeLightMode ? .light : .dark
 
         // Set up the terminal delegate
         terminalView.terminalDelegate = context.coordinator
@@ -400,6 +454,14 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap))
         tapGesture.cancelsTouchesInView = false
         terminalView.addGestureRecognizer(tapGesture)
+
+        // Add swipe gestures for arrow keys
+        for direction: UISwipeGestureRecognizer.Direction in [.up, .down, .left, .right] {
+            let swipe = UISwipeGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSwipe(_:)))
+            swipe.direction = direction
+            swipe.cancelsTouchesInView = false
+            terminalView.addGestureRecognizer(swipe)
+        }
 
         // Become first responder to show keyboard
         print("TerminalContainerView[\(sessionName)]: scheduling auto-focus in 0.5s")
@@ -425,7 +487,12 @@ struct TerminalViewRepresentable: UIViewRepresentable {
         let theme = themeManager.currentTheme
         uiView.font = UIFont.monospacedSystemFont(ofSize: themeManager.fontSize, weight: .regular)
         uiView.nativeForegroundColor = theme.foregroundColor
+        uiView.caretColor = theme.cursorColor
+        // Set background last — its setter triggers colorsChanged() which redraws everything
         uiView.nativeBackgroundColor = theme.backgroundColor
+
+        // Keyboard appearance follows chrome mode
+        uiView.overrideUserInterfaceStyle = themeManager.isChromeLightMode ? .light : .dark
     }
 
     func makeCoordinator() -> Coordinator {
@@ -486,6 +553,28 @@ struct TerminalViewRepresentable: UIViewRepresentable {
                     let retrySuccess = tv.becomeFirstResponder()
                     print("TerminalContainerView[\(sessionName)]: handleTap retry - becomeFirstResponder = \(retrySuccess)")
                 }
+            }
+        }
+
+        /// Handle swipe gesture to send arrow key escape sequences
+        @objc func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
+            guard UserDefaults.standard.object(forKey: "swipeGesturesEnabled") == nil
+                    || UserDefaults.standard.bool(forKey: "swipeGesturesEnabled") else { return }
+
+            let escapeSequence: String
+            switch gesture.direction {
+            case .up:    escapeSequence = "\u{1b}[A"
+            case .down:  escapeSequence = "\u{1b}[B"
+            case .right: escapeSequence = "\u{1b}[C"
+            case .left:  escapeSequence = "\u{1b}[D"
+            default: return
+            }
+
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+            let session = sessionName
+            Task { @MainActor in
+                connectionManager.sendInput(escapeSequence, to: session)
             }
         }
 

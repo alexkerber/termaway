@@ -11,7 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="/xterm/css/xterm.css">
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
   <!-- Lucide icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Apply theme immediately to prevent flash -->
@@ -30,20 +30,20 @@
 <body>
   <div id="app">
     <!-- Header with tabs and controls -->
-    <header id="header">
+    <header id="header" role="banner">
       <div id="tabs-container">
-        <div id="tabs"></div>
-        <button id="new-session-btn" title="Create new session"><i data-lucide="plus"></i></button>
+        <div id="tabs" role="tablist" aria-label="Terminal sessions"></div>
+        <button id="new-session-btn" title="Create new session" aria-label="Create new session"><i data-lucide="plus"></i></button>
       </div>
       <div id="status-container">
-        <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar"><i data-lucide="keyboard"></i></button>
-        <button class="header-btn" id="theme-toggle-header" title="Toggle theme"><i data-lucide="sun-moon"></i></button>
-        <button class="header-btn" id="settings-btn-header" title="Settings"><i data-lucide="settings"></i></button>
-        <span id="connection-status" class="connecting" title="Connection status">
-          <span class="status-dot"></span>
+        <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar" aria-label="Toggle keyboard toolbar" aria-pressed="false"><i data-lucide="keyboard"></i></button>
+        <button class="header-btn" id="theme-toggle-header" title="Toggle theme" aria-label="Toggle theme"><i data-lucide="sun-moon"></i></button>
+        <button class="header-btn" id="settings-btn-header" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
+        <span id="connection-status" class="connecting" role="status" aria-live="polite" title="Connection status">
+          <span class="status-dot" aria-hidden="true"></span>
           <span class="status-text">Connecting...</span>
         </span>
-        <button class="header-btn" id="disconnect-btn" title="Disconnect" style="display:none;"><i data-lucide="power"></i></button>
+        <button class="header-btn" id="disconnect-btn" title="Disconnect" aria-label="Disconnect from server" style="display:none;"><i data-lucide="power"></i></button>
       </div>
     </header>
 
@@ -69,9 +69,9 @@
     </div>
 
     <!-- Terminal container -->
-    <main id="terminal-container">
-      <div id="terminal"></div>
-      <button id="scroll-to-bottom" class="scroll-hidden" title="Scroll to bottom">
+    <main id="terminal-container" role="main">
+      <div id="terminal" aria-label="Terminal output"></div>
+      <button id="scroll-to-bottom" class="scroll-hidden" title="Scroll to bottom" aria-label="Scroll to bottom">
         <i data-lucide="arrow-down-to-line"></i>
       </button>
       <div id="no-session" class="hidden">
@@ -83,8 +83,11 @@
       </div>
     </main>
 
+    <!-- Settings backdrop -->
+    <div id="settings-backdrop" class="hidden"></div>
+
     <!-- Settings panel -->
-    <div id="settings-panel" class="hidden">
+    <div id="settings-panel" class="hidden" role="dialog" aria-label="Settings">
       <div class="settings-content">
         <div class="settings-header">
           <h3>Settings</h3>
@@ -117,19 +120,22 @@
     </div>
 
     <!-- Modal for new session name -->
-    <div id="modal-overlay" class="hidden">
+    <div id="modal-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div id="modal">
         <h3 id="modal-title">New Session</h3>
-        <input type="text" id="modal-input" placeholder="Session name" autocomplete="off">
+        <input type="text" id="modal-input" placeholder="Session name" autocomplete="off" aria-label="Session name">
         <div id="modal-buttons">
           <button id="modal-cancel" class="btn-secondary">Cancel</button>
           <button id="modal-confirm" class="btn-primary">Create</button>
         </div>
       </div>
     </div>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" aria-live="polite" aria-relevant="additions"></div>
   </div>
 
-  <script src="terminal.js?v=17"></script>
+  <script src="terminal.js?v=18"></script>
   <script>
     // Initialize Lucide icons
     lucide.createIcons();

@@ -83,7 +83,7 @@ struct ShortcutRow: View {
 
             if shortcut.showInToolbar {
                 Image(systemName: "keyboard")
-                    .foregroundColor(.blue)
+                    .foregroundColor(.accentColor)
                     .font(.caption)
             }
 

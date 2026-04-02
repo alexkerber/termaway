@@ -26,6 +26,10 @@ func sessionSheetDetents(for count: Int) -> Set<PresentationDetent> {
 struct ContentView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var biometricManager: BiometricManager
+    /// Per-window session binding for multi-window support on iPadOS.
+    /// Each window independently tracks which session it displays.
+    @Binding var windowSessionName: String?
     @State private var showingServerSheet = false
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var passwordInput = ""
@@ -39,6 +43,7 @@ struct ContentView: View {
     }
 
     var body: some View {
+        ZStack {
         Group {
             // Show sessions when connected AND (authenticated OR no auth required)
             if connectionManager.isConnected && (connectionManager.isAuthenticated || !connectionManager.authRequired) {
@@ -60,7 +65,8 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingServerSheet) {
             ServerSettingsView()
-                .presentationBackground(.ultraThinMaterial)
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(20)
         }
         .alert("Password Required", isPresented: .constant(needsPasswordPrompt)) {
             SecureField("Password", text: $passwordInput)
@@ -77,6 +83,48 @@ struct ContentView: View {
                 Text(error)
             } else {
                 Text("Enter the server password")
+            }
+        }
+
+        // Biometric lock overlay
+        if biometricManager.isLocked {
+            LockScreenOverlay()
+                .environmentObject(biometricManager)
+                .transition(.opacity)
+        }
+        } // ZStack
+    }
+}
+
+// MARK: - Lock Screen Overlay
+struct LockScreenOverlay: View {
+    @EnvironmentObject var biometricManager: BiometricManager
+
+    var body: some View {
+        ZStack {
+            // Blurred background covering everything
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                Image(systemName: "faceid")
+                    .font(.system(size: 48))
+                    .foregroundColor(.brandOrange)
+
+                Text("TermAway is Locked")
+                    .font(.title2.weight(.semibold))
+                    .foregroundColor(.primary)
+
+                Button(action: { biometricManager.authenticate() }) {
+                    Text("Unlock with \(biometricManager.biometricTypeName)")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 14)
+                        .background(Color.brandOrange)
+                        .clipShape(Capsule())
+                }
             }
         }
     }
@@ -159,9 +207,10 @@ struct SessionRowView: View {
                     .foregroundColor(.primary)
 
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(session.clientCount > 0 ? Color.green : Color.gray.opacity(0.5))
-                        .frame(width: 6, height: 6)
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 6))
+                        .foregroundStyle(session.clientCount > 0 ? Color.green : Color.gray.opacity(0.5))
+                        .symbolEffect(.pulse, isActive: session.clientCount > 0)
 
                     Text(session.clientCount > 0 ? "Active" : "Idle")
                         .font(.caption)
@@ -171,6 +220,7 @@ struct SessionRowView: View {
                         Text("• \(session.clientCount) clients")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .contentTransition(.numericText())
                     }
                 }
             }
@@ -179,7 +229,7 @@ struct SessionRowView: View {
 
             if isActive && !isEditMode {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.brandOrange)
                     .font(.title3)
             }
         }
@@ -188,6 +238,7 @@ struct SessionRowView: View {
         .onTapGesture {
             // Only attach if not already active and not in edit mode
             if !isActive && !isEditMode {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 // Attach to the session on the server
                 connectionManager.attachToSession(session.name)
 
@@ -231,6 +282,15 @@ struct SessionRowView: View {
                 }
                 .disabled(isActive)
 
+                // Open in New Window (iPad only — multi-window / Stage Manager)
+                if isIPad {
+                    Button(action: {
+                        openSessionInNewWindow(session.name)
+                    }) {
+                        Label("Open in New Window", systemImage: "macwindow.badge.plus")
+                    }
+                }
+
                 Button(action: {
                     newName = session.name
                     showingRenameAlert = true
@@ -273,16 +333,20 @@ struct TerminalDetailView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var splitPaneManager: SplitPaneManager
+    @EnvironmentObject var keyboardShortcutState: KeyboardShortcutState
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var showingSettings = false
     @State private var showingNewSession = false
     @State private var showingSessionList = false
     @State private var showingSplitMenu = false
+    @State private var showingKillConfirmation = false
     @State private var newSessionName = ""
+    @State private var showSearch = false
+    @StateObject private var searchManager = TerminalSearchManager()
 
-    // Icon color adapts to terminal background
+    // Icon color adapts to appearance mode
     private var iconColor: Color {
-        themeManager.terminalOverlayColor
+        themeManager.chromeIconColor
     }
 
     var body: some View {
@@ -296,45 +360,100 @@ struct TerminalDetailView: View {
                     .navigationBarHidden(true)
 
                 // Custom top bar overlay - only when session active
-                VStack {
+                VStack(spacing: 0) {
                     HStack(spacing: 10) {
-                        // + button in glass circle (new session)
-                        GlassCircleButton(
-                            icon: "plus",
-                            color: iconColor,
-                            action: { showingNewSession = true }
-                        )
+                        if showSearch {
+                            // Inline search field — replaces toolbar buttons
+                            InlineSearchField(
+                                searchManager: searchManager,
+                                iconColor: iconColor,
+                                onDismiss: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        showSearch = false
+                                        searchManager.reset()
+                                    }
+                                    NotificationCenter.default.post(name: .dismissTerminalSearch, object: nil)
+                                }
+                            )
+                            .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
+                        } else {
+                            // + button in glass circle (new session)
+                            GlassCircleButton(
+                                icon: "plus",
+                                color: iconColor,
+                                lightMode: themeManager.isChromeLightMode,
+                                action: { showingNewSession = true }
+                            )
 
-                        // Session name (tappable to show session list)
-                        Button(action: { showingSessionList = true }) {
-                            Text(splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "")
-                                .font(.headline)
-                                .foregroundColor(iconColor)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                            // Session name (tappable to show session list)
+                            Button(action: { showingSessionList = true }) {
+                                Text(splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "")
+                                    .font(.headline)
+                                    .foregroundColor(iconColor)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: 150, alignment: .leading)
+
+                            Spacer()
+
+                            // Search button
+                            GlassCircleButton(
+                                icon: "magnifyingglass",
+                                color: iconColor,
+                                lightMode: themeManager.isChromeLightMode,
+                                action: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        showSearch = true
+                                    }
+                                    let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
+                                    let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
+                                    searchManager.updateSearchableText(from: buffer)
+                                }
+                            )
+
+                            // Split pane button (iPad only)
+                            SplitPaneMenuButton(iconColor: iconColor, lightMode: themeManager.isChromeLightMode)
+
+                            // Connected status pill (tappable to show sessions)
+                            ConnectionStatusPill(lightMode: themeManager.isChromeLightMode, action: { showingSessionList = true })
+
+                            // Gear icon in glass circle (settings)
+                            GlassCircleButton(
+                                icon: "gearshape.fill",
+                                color: iconColor,
+                                lightMode: themeManager.isChromeLightMode,
+                                action: { showingSettings = true }
+                            )
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: 150, alignment: .leading)
-
-                        Spacer()
-
-                        // Split pane button (iPad only)
-                        SplitPaneMenuButton(iconColor: iconColor)
-
-                        // Connected status pill (tappable to show sessions)
-                        ConnectionStatusPill(action: { showingSessionList = true })
-
-                        // Gear icon in glass circle (settings)
-                        GlassCircleButton(
-                            icon: "gearshape.fill",
-                            color: iconColor,
-                            action: { showingSettings = true }
-                        )
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.vertical, 8)
+                    .background {
+                        if themeManager.isChromeLightMode {
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .ignoresSafeArea(edges: .top)
+                        }
+                    }
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearch)
 
                     Spacer()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .toggleTerminalSearch)) { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        if showSearch {
+                            showSearch = false
+                            searchManager.reset()
+                            NotificationCenter.default.post(name: .dismissTerminalSearch, object: nil)
+                        } else {
+                            showSearch = true
+                            let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
+                            let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
+                            searchManager.updateSearchableText(from: buffer)
+                        }
+                    }
                 }
             } else if connectionManager.sessions.isEmpty {
                 NoSessionView(showingNewSession: $showingNewSession)
@@ -359,6 +478,7 @@ struct TerminalDetailView: View {
                 .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(20)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
@@ -400,8 +520,26 @@ struct TerminalDetailView: View {
                 }
             }
         }
+        .alert("Close Window?", isPresented: $showingKillConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Close", role: .destructive) {
+                if let name = connectionManager.currentSession?.name {
+                    connectionManager.killSession(name)
+                }
+            }
+        } message: {
+            if let name = connectionManager.currentSession?.name {
+                Text("This will terminate \"\(name)\" and cannot be undone.")
+            }
+        }
+        .keyboardShortcutHandler(
+            shortcutState: keyboardShortcutState,
+            showingNewSession: $showingNewSession,
+            showingSettings: $showingSettings,
+            showingKillConfirmation: $showingKillConfirmation
+        )
         .hideToolbarBackground()
-        .preferredColorScheme(.dark) // Terminal always dark
+        .preferredColorScheme(themeManager.appearanceMode.colorScheme)
     }
 }
 
@@ -410,6 +548,7 @@ struct SplitPaneMenuButton: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var splitPaneManager: SplitPaneManager
     let iconColor: Color
+    var lightMode: Bool = false
 
     var body: some View {
         Menu {
@@ -442,6 +581,7 @@ struct SplitPaneMenuButton: View {
             GlassCircleButton(
                 icon: splitPaneManager.layout.icon,
                 color: iconColor,
+                lightMode: lightMode,
                 action: { }
             )
             .allowsHitTesting(false)
@@ -450,6 +590,7 @@ struct SplitPaneMenuButton: View {
 
     /// Change layout and auto-create sessions for new panes
     private func changeToLayout(_ layout: SplitLayout) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         let currentPaneCount = splitPaneManager.panes.count
         let neededPaneCount = layout.paneCount
         let newPanesNeeded = max(0, neededPaneCount - currentPaneCount)
@@ -485,14 +626,18 @@ struct SessionCompactView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var splitPaneManager: SplitPaneManager
+    @EnvironmentObject var keyboardShortcutState: KeyboardShortcutState
     @State private var showingNewSession = false
     @State private var newSessionName = ""
     @State private var showingSessionList = false
     @State private var showingSettings = false
+    @State private var showingKillConfirmation = false
+    @State private var showSearch = false
+    @StateObject private var searchManager = TerminalSearchManager()
 
-    // Icon color adapts to terminal background (white for dark themes, black for light)
+    // Icon color adapts to appearance mode
     private var iconColor: Color {
-        themeManager.terminalOverlayColor
+        themeManager.chromeIconColor
     }
 
     var body: some View {
@@ -504,44 +649,100 @@ struct SessionCompactView: View {
             if let currentSession = connectionManager.currentSession {
                 TerminalContainerView(session: currentSession)
                     .id(currentSession.name) // Force new view instance per session
+                    .transition(.opacity.animation(.easeInOut(duration: 0.2)))
 
                 // Custom top bar overlay (only when session active)
                 VStack {
                     HStack(spacing: 10) {
-                        // + button in glass circle (new session)
-                        GlassCircleButton(
-                            icon: "plus",
-                            color: iconColor,
-                            action: { showingNewSession = true }
-                        )
+                        if showSearch {
+                            // Inline search field — replaces toolbar buttons
+                            InlineSearchField(
+                                searchManager: searchManager,
+                                iconColor: iconColor,
+                                onDismiss: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        showSearch = false
+                                        searchManager.reset()
+                                    }
+                                    NotificationCenter.default.post(name: .dismissTerminalSearch, object: nil)
+                                }
+                            )
+                            .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
+                        } else {
+                            // + button in glass circle (new session)
+                            GlassCircleButton(
+                                icon: "plus",
+                                color: iconColor,
+                                lightMode: themeManager.isChromeLightMode,
+                                action: { showingNewSession = true }
+                            )
 
-                        // Session name (tappable to show session list)
-                        Button(action: { showingSessionList = true }) {
-                            Text(currentSession.name)
-                                .font(.headline)
-                                .foregroundColor(iconColor)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                            // Session name (tappable to show session list)
+                            Button(action: { showingSessionList = true }) {
+                                Text(currentSession.name)
+                                    .font(.headline)
+                                    .foregroundColor(iconColor)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: 150, alignment: .leading)
+
+                            Spacer()
+
+                            // Search button
+                            GlassCircleButton(
+                                icon: "magnifyingglass",
+                                color: iconColor,
+                                lightMode: themeManager.isChromeLightMode,
+                                action: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        showSearch = true
+                                    }
+                                    let buffer = connectionManager.getSessionOutputBuffer(for: currentSession.name)
+                                    searchManager.updateSearchableText(from: buffer)
+                                }
+                            )
+
+                            // Connected status pill (tappable to show sessions)
+                            ConnectionStatusPill(lightMode: themeManager.isChromeLightMode, action: { showingSessionList = true })
+
+                            // Gear icon in glass circle (settings)
+                            GlassCircleButton(
+                                icon: "gearshape.fill",
+                                color: iconColor,
+                                lightMode: themeManager.isChromeLightMode,
+                                action: { showingSettings = true }
+                            )
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: 150, alignment: .leading)
-
-                        Spacer()
-
-                        // Connected status pill (tappable to show sessions)
-                        ConnectionStatusPill(action: { showingSessionList = true })
-
-                        // Gear icon in glass circle (settings)
-                        GlassCircleButton(
-                            icon: "gearshape.fill",
-                            color: iconColor,
-                            action: { showingSettings = true }
-                        )
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.vertical, 8)
+                    .background {
+                        if themeManager.isChromeLightMode {
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .ignoresSafeArea(edges: .top)
+                        }
+                    }
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearch)
 
                     Spacer()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .toggleTerminalSearch)) { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        if showSearch {
+                            showSearch = false
+                            searchManager.reset()
+                            NotificationCenter.default.post(name: .dismissTerminalSearch, object: nil)
+                        } else {
+                            showSearch = true
+                            if let session = connectionManager.currentSession {
+                                let buffer = connectionManager.getSessionOutputBuffer(for: session.name)
+                                searchManager.updateSearchableText(from: buffer)
+                            }
+                        }
+                    }
                 }
             } else if connectionManager.sessions.isEmpty {
                 NoSessionView(showingNewSession: $showingNewSession)
@@ -552,6 +753,7 @@ struct SessionCompactView: View {
                             icon: "gearshape.fill",
                             size: 44,
                             color: iconColor,
+                            lightMode: themeManager.isChromeLightMode,
                             action: { showingSettings = true }
                         )
                     }
@@ -572,6 +774,7 @@ struct SessionCompactView: View {
                 .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(20)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
@@ -603,13 +806,32 @@ struct SessionCompactView: View {
                 connectionManager.attachToSession(first.name)
             }
         }
+        .alert("Close Window?", isPresented: $showingKillConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Close", role: .destructive) {
+                if let name = connectionManager.currentSession?.name {
+                    connectionManager.killSession(name)
+                }
+            }
+        } message: {
+            if let name = connectionManager.currentSession?.name {
+                Text("This will terminate \"\(name)\" and cannot be undone.")
+            }
+        }
+        .keyboardShortcutHandler(
+            shortcutState: keyboardShortcutState,
+            showingNewSession: $showingNewSession,
+            showingSettings: $showingSettings,
+            showingKillConfirmation: $showingKillConfirmation
+        )
     }
 }
 
-// MARK: - Session List Sheet (iPhone)
+// MARK: - Session List Sheet
 struct SessionListSheet: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var splitPaneManager: SplitPaneManager
+    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.dismiss) var dismiss
     @State private var showingNewSession = false
     @State private var newSessionName = ""
@@ -624,87 +846,112 @@ struct SessionListSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Custom header with centered title
-            ZStack {
-                // Centered title
-                Text("Windows")
-                    .font(.headline)
-
-                // Left and right buttons
-                HStack {
-                    if isEditMode {
-                        // Done button (blue - iOS standard)
-                        Button {
-                            withAnimation {
-                                isEditMode = false
-                                selectedSessions.removeAll()
-                            }
-                        } label: {
-                            Text("Done")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(.blue)
+            // Header
+            HStack {
+                if isEditMode {
+                    Button {
+                        withAnimation {
+                            isEditMode = false
+                            selectedSessions.removeAll()
                         }
-                    } else {
-                        // Cancel to close
-                        Button {
-                            dismiss()
-                        } label: {
-                            Text("Cancel")
-                                .font(.body.weight(.medium))
-                                .foregroundColor(.primary)
-                        }
+                    } label: {
+                        Text("Done")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.brandOrange)
                     }
+                } else {
+                    Button { dismiss() } label: {
+                        Text("Close")
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
 
-                    Spacer()
+                Spacer()
 
-                    // Right buttons
-                    if isEditMode {
-                        // Select all / deselect all
+                VStack(spacing: 2) {
+                    Text("Sessions")
+                        .font(.headline)
+                    if !connectionManager.sessions.isEmpty {
+                        Text("\(connectionManager.sessions.count) active")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .contentTransition(.numericText())
+                    }
+                }
+
+                Spacer()
+
+                if isEditMode {
+                    Button {
+                        if allSelected {
+                            selectedSessions.removeAll()
+                        } else {
+                            selectedSessions = Set(connectionManager.sessions.map { $0.name })
+                        }
+                    } label: {
+                        Text(allSelected ? "Deselect" : "Select All")
+                            .font(.body.weight(.medium))
+                            .foregroundColor(.brandOrange)
+                    }
+                } else {
+                    if connectionManager.sessions.count > 1 {
                         Button {
-                            if allSelected {
-                                selectedSessions.removeAll()
-                            } else {
-                                selectedSessions = Set(connectionManager.sessions.map { $0.name })
-                            }
+                            withAnimation { isEditMode = true }
                         } label: {
-                            Text(allSelected ? "Deselect" : "Select All")
+                            Text("Select")
                                 .font(.body.weight(.medium))
                                 .foregroundColor(.brandOrange)
                         }
                     } else {
-                        HStack(spacing: 12) {
-                            if connectionManager.sessions.count > 1 {
-                                // Select button (enter multi-select mode)
-                                Button {
-                                    withAnimation {
-                                        isEditMode = true
-                                    }
-                                } label: {
-                                    Text("Select")
-                                        .font(.body.weight(.medium))
-                                        .foregroundColor(.blue)
-                                }
-                            }
-                            // New session button
-                            GlassCircleButton(
-                                icon: "plus",
-                                size: 36,
-                                iconSize: 16,
-                                action: { showingNewSession = true }
-                            )
-                        }
+                        // Invisible placeholder to keep title centered
+                        Text("Close")
+                            .font(.body.weight(.medium))
+                            .hidden()
                     }
                 }
             }
-            .frame(height: 44)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .padding(.top, 24)
             .padding(.bottom, 8)
 
-            // Sessions list with overlay for delete button
-            ZStack(alignment: .bottom) {
-                List {
-                    Section {
+            // Content
+            if connectionManager.sessions.isEmpty {
+                // Empty state
+                Spacer()
+                VStack(spacing: 16) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary.opacity(0.5))
+
+                    Text("No sessions yet")
+                        .font(.title3.weight(.medium))
+                        .foregroundColor(.secondary)
+
+                    Text("Create a session to get started")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary.opacity(0.7))
+
+                    Button(action: { showingNewSession = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus")
+                                .font(.body.weight(.semibold))
+                            Text("New Session")
+                                .font(.body.weight(.semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 12)
+                        .background(Color.brandOrange)
+                        .clipShape(Capsule())
+                    }
+                    .padding(.top, 4)
+                }
+                Spacer()
+            } else {
+                // Sessions list with bottom action area
+                ZStack(alignment: .bottom) {
+                    List {
                         ForEach(connectionManager.sessions) { session in
                             HStack(spacing: 12) {
                                 if isEditMode {
@@ -724,6 +971,11 @@ struct SessionListSheet: View {
 
                                 SessionRowView(session: session, isEditMode: isEditMode)
                             }
+                            .listRowBackground(
+                                connectionManager.currentSession?.name == session.name
+                                    ? Color.brandOrange.opacity(0.1)
+                                    : Color.clear
+                            )
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 if isEditMode {
@@ -731,67 +983,79 @@ struct SessionListSheet: View {
                                 }
                             }
                         }
-                    } header: {
-                        HStack {
-                            Text("Active Windows")
-                            Spacer()
-                            Text("\(connectionManager.sessions.count)")
-                                .foregroundColor(.secondary)
-                        }
                     }
-                }
-                .listStyle(.insetGrouped)
-                .contentMargins(.bottom, isEditMode && !selectedSessions.isEmpty ? 70 : 0, for: .scrollContent)
+                    .listStyle(.insetGrouped)
+                    .scrollContentBackground(.hidden)
+                    .contentMargins(.bottom, 80, for: .scrollContent)
 
-                // Delete button when in edit mode with selections
-                if isEditMode && !selectedSessions.isEmpty {
-                    Button {
-                        showingDeleteConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "trash.fill")
-                            Text("Delete \(selectedSessions.count) Window\(selectedSessions.count == 1 ? "" : "s")")
+                    // Bottom action area
+                    VStack(spacing: 0) {
+                        Divider()
+
+                        if isEditMode && !selectedSessions.isEmpty {
+                            Button {
+                                showingDeleteConfirmation = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "trash.fill")
+                                    Text("Delete \(selectedSessions.count) Session\(selectedSessions.count == 1 ? "" : "s")")
+                                }
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.red)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                        } else {
+                            Button(action: { showingNewSession = true }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "plus")
+                                        .font(.body.weight(.semibold))
+                                    Text("New Session")
+                                        .font(.body.weight(.semibold))
+                                }
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.brandOrange)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
                         }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.red)
-                        .cornerRadius(12)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .background(.regularMaterial)
                 }
             }
         }
+        .preferredColorScheme(themeManager.appearanceMode.colorScheme)
         .onChange(of: connectionManager.sessions) { _, newSessions in
-            // Auto-dismiss when no sessions left
-            if newSessions.isEmpty {
-                dismiss()
+            if newSessions.isEmpty && isEditMode {
+                isEditMode = false
+                selectedSessions.removeAll()
             }
-            // Clean up selections for deleted sessions
             selectedSessions = selectedSessions.filter { name in
                 newSessions.contains { $0.name == name }
             }
-            // Exit edit mode if only one session left
             if newSessions.count <= 1 {
                 isEditMode = false
             }
         }
         .onChange(of: connectionManager.currentSession?.name) { _, _ in
-            // Dismiss when user taps a session (only if not in edit mode)
             if !isEditMode {
                 dismiss()
             }
         }
-        .alert("New Window", isPresented: $showingNewSession) {
-            TextField("Window name", text: $newSessionName)
+        .alert("New Session", isPresented: $showingNewSession) {
+            TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
             Button("Create") {
                 if !newSessionName.isEmpty {
-                    // Clear any stale layout from a previous session with this name
                     splitPaneManager.clearSavedLayout(for: newSessionName)
                     connectionManager.createSession(newSessionName)
                     connectionManager.attachToSession(newSessionName)
@@ -799,13 +1063,13 @@ struct SessionListSheet: View {
                 }
             }
         }
-        .alert("Delete Windows", isPresented: $showingDeleteConfirmation) {
+        .alert("Delete Sessions", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Delete \(selectedSessions.count)", role: .destructive) {
                 deleteSelectedSessions()
             }
         } message: {
-            Text("Are you sure you want to delete \(selectedSessions.count) window\(selectedSessions.count == 1 ? "" : "s")? This cannot be undone.")
+            Text("Are you sure you want to delete \(selectedSessions.count) session\(selectedSessions.count == 1 ? "" : "s")? This cannot be undone.")
         }
     }
 
@@ -929,168 +1193,334 @@ struct ConnectView: View {
     @Environment(\.colorScheme) var colorScheme
     @Binding var showingServerSheet: Bool
     @State private var animateGradient = false
-    @State private var pulseScale: CGFloat = 1.0
+    @State private var serverURL: String = ""
+    @State private var password: String = ""
+    @State private var appearAnimation = false
+    @FocusState private var focusedField: ConnectField?
+
+    private enum ConnectField {
+        case url, password
+    }
+
+    private var canConnect: Bool {
+        !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         ZStack {
-            // Adaptive background
             Color(uiColor: .systemBackground)
                 .ignoresSafeArea()
 
-            // Animated background blobs (lava lamp style)
+            // Animated background blobs
             GeometryReader { geo in
                 ZStack {
-                    // Top-left blob
                     Circle()
-                        .fill(Color.brandOrange.opacity(colorScheme == .dark ? 0.3 : 0.18))
-                        .frame(width: 550, height: 550)
-                        .blur(radius: 120)
-                        .position(
-                            x: geo.size.width * (animateGradient ? 0.25 : 0.05),
-                            y: geo.size.height * (animateGradient ? 0.3 : 0.1)
-                        )
-
-                    // Bottom-right blob
-                    Circle()
-                        .fill(Color.brandAmber.opacity(colorScheme == .dark ? 0.25 : 0.15))
+                        .fill(Color.brandOrange.opacity(colorScheme == .dark ? 0.2 : 0.12))
                         .frame(width: 500, height: 500)
-                        .blur(radius: 100)
+                        .blur(radius: 130)
                         .position(
-                            x: geo.size.width * (animateGradient ? 0.75 : 0.95),
-                            y: geo.size.height * (animateGradient ? 0.85 : 0.65)
+                            x: geo.size.width * (animateGradient ? 0.25 : 0.08),
+                            y: geo.size.height * (animateGradient ? 0.25 : 0.08)
                         )
 
-                    // Center blob
                     Circle()
-                        .fill(Color.brandCream.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                        .frame(width: 450, height: 450)
+                        .fill(Color.brandAmber.opacity(colorScheme == .dark ? 0.15 : 0.1))
+                        .frame(width: 400, height: 400)
                         .blur(radius: 110)
                         .position(
-                            x: geo.size.width * (animateGradient ? 0.65 : 0.35),
-                            y: geo.size.height * (animateGradient ? 0.45 : 0.55)
+                            x: geo.size.width * (animateGradient ? 0.8 : 0.92),
+                            y: geo.size.height * (animateGradient ? 0.8 : 0.65)
                         )
                 }
             }
+            .ignoresSafeArea()
             .onAppear {
-                withAnimation(.easeInOut(duration: 10).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 12).repeatForever(autoreverses: true)) {
                     animateGradient = true
                 }
             }
 
-            // Main content
-            VStack(spacing: 20) {
-                Spacer()
+            ScrollView {
+                VStack(spacing: 0) {
+                    Spacer()
+                        .frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 80 : 50)
 
-                // App icon with glow
-                ZStack {
-                    // Glow effect
-                    Image("LogoIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
-                        .blur(radius: 30)
-                        .opacity(0.5)
-                        .scaleEffect(pulseScale)
+                    // Header
+                    VStack(spacing: 16) {
+                        Image("LogoIcon")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 80, height: 80)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .shadow(color: .brandOrange.opacity(0.25), radius: 16, y: 6)
+                            .scaleEffect(appearAnimation ? 1.0 : 0.8)
+                            .opacity(appearAnimation ? 1.0 : 0.0)
 
-                    Image("LogoIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 100, height: 100)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .shadow(color: .brandOrange.opacity(0.3), radius: 20, y: 8)
-                }
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-                        pulseScale = 1.1
+                        VStack(spacing: 6) {
+                            Text("TermAway")
+                                .font(.system(size: 32, weight: .bold, design: .default))
+                                .foregroundColor(.primary)
+
+                            Text("Your Mac terminal — on your \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .opacity(appearAnimation ? 1.0 : 0.0)
+                        .offset(y: appearAnimation ? 0 : 8)
                     }
-                }
+                    .padding(.bottom, 36)
 
-                VStack(spacing: 12) {
-                    Text("TermAway")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(.primary)
+                    // Connection form
+                    VStack(spacing: 16) {
+                        // Server URL
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Server")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.secondary)
 
-                    Text("Your Mac terminal — on your \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
+                            HStack(spacing: 12) {
+                                Image(systemName: "link")
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 20)
 
-                // Server URL badge
-                if let serverURL = connectionManager.serverURL {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(connectionManager.isConnecting ? .yellow : .secondary.opacity(0.5))
-                            .frame(width: 8, height: 8)
+                                TextField("192.168.1.100:3000", text: $serverURL)
+                                    .keyboardType(.URL)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .focused($focusedField, equals: .url)
+                                    .submitLabel(.next)
+                                    .onSubmit { focusedField = .password }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(uiColor: .secondarySystemBackground))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(focusedField == .url ? Color.brandOrange.opacity(0.5) : .clear, lineWidth: 1.5)
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: focusedField)
+                        }
 
-                        Text(serverURL.replacingOccurrences(of: "ws://", with: "").replacingOccurrences(of: "wss://", with: ""))
-                            .font(.system(.footnote, design: .monospaced))
+                        // Password
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Password")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.secondary)
+
+                            HStack(spacing: 12) {
+                                Image(systemName: "lock")
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 20)
+
+                                SecureField("Optional", text: $password)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .focused($focusedField, equals: .password)
+                                    .submitLabel(.go)
+                                    .onSubmit { if canConnect { connect() } }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(uiColor: .secondarySystemBackground))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(focusedField == .password ? Color.brandOrange.opacity(0.5) : .clear, lineWidth: 1.5)
+                            }
+                            .animation(.easeInOut(duration: 0.15), value: focusedField)
+                        }
+
+                        // Error message
+                        if let error = connectionManager.lastError {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.footnote)
+                                Text(error)
+                                    .font(.footnote.weight(.medium))
+                            }
+                            .foregroundColor(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+
+                        // Connect button
+                        Button(action: connect) {
+                            HStack(spacing: 10) {
+                                if connectionManager.isConnecting {
+                                    ProgressView()
+                                        .tint(.white)
+                                        .scaleEffect(0.9)
+                                        .transition(.opacity)
+                                }
+                                Text(connectionManager.isConnecting ? "Connecting..." : "Connect")
+                                    .font(.body.weight(.semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(canConnect ? Color.brandOrange : Color.brandOrange.opacity(0.4))
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .shadow(color: canConnect ? .brandOrange.opacity(0.25) : .clear, radius: 10, y: 5)
+                        }
+                        .disabled(!canConnect || connectionManager.isConnecting)
+                        .animation(.easeInOut(duration: 0.2), value: connectionManager.isConnecting)
+                        .padding(.top, 4)
+                    }
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: 400)
+                    .opacity(appearAnimation ? 1.0 : 0.0)
+                    .offset(y: appearAnimation ? 0 : 12)
+
+                    // Discovered servers
+                    ConnectDiscoveredServersSection(serverURL: $serverURL)
+                        .padding(.top, 28)
+                        .frame(maxWidth: 400)
+                        .opacity(appearAnimation ? 1.0 : 0.0)
+
+                    Spacer()
+                        .frame(height: 40)
+
+                    // Footer
+                    VStack(spacing: 12) {
+                        Button(action: { showingServerSheet = true }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "gearshape")
+                                    .font(.subheadline)
+                                Text("Advanced Settings")
+                                    .font(.subheadline.weight(.medium))
+                            }
                             .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .background(.secondary.opacity(0.1), in: Capsule())
-                }
-
-                Spacer()
-
-                // Connect button with error overlay below
-                Button(action: { connectionManager.connect() }) {
-                    HStack(spacing: 12) {
-                        if connectionManager.isConnecting {
-                            ProgressView()
-                                .tint(.white)
                         }
-                        Text(connectionManager.isConnecting ? "Connecting..." : "Connect")
-                            .font(.system(size: 17, weight: .semibold))
+
+                        Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.5))
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 24)
-                    .padding(.vertical, 18)
-                    .background(Color.brandOrange)
-                    .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .brandOrange.opacity(0.3), radius: 12, y: 6)
-                }
-                .disabled(connectionManager.isConnecting)
-                .frame(maxWidth: 300)
-                .padding(.horizontal, 24)
-                .overlay(alignment: .top) {
-                    // Error floats below button without affecting layout
-                    if let error = connectionManager.lastError {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.red)
-                            Text(error)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.red)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
-                        .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
-                        .offset(y: 76) // Position below button
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                        .animation(.easeInOut(duration: 0.2), value: error)
-                    }
-                }
-
-                Spacer()
-
-                // Settings button at bottom
-                GlassSettingsButton(action: { showingServerSheet = true })
-
-                // Version number
-                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
-                    .font(.caption)
-                    .foregroundColor(.secondary.opacity(0.6))
-                    .padding(.top, 12)
                     .padding(.bottom, 30)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .onAppear {
+            serverURL = connectionManager.serverURL?
+                .replacingOccurrences(of: "ws://", with: "")
+                .replacingOccurrences(of: "wss://", with: "") ?? ""
+            password = connectionManager.serverPassword ?? ""
+            withAnimation(.easeOut(duration: 0.6).delay(0.1)) {
+                appearAnimation = true
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: connectionManager.lastError)
+    }
+
+    private func connect() {
+        focusedField = nil
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        var url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !url.hasPrefix("ws://") && !url.hasPrefix("wss://") {
+            url = "ws://\(url)"
+        }
+
+        connectionManager.setServerURL(url)
+        connectionManager.serverPassword = password.isEmpty ? nil : password
+        connectionManager.connect()
+    }
+}
+
+// MARK: - Discovered Servers (Connect Screen)
+struct ConnectDiscoveredServersSection: View {
+    @Binding var serverURL: String
+    @StateObject private var bonjourBrowser = BonjourBrowser()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "bonjour")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Text("Discovered Servers")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 24)
+
+            if bonjourBrowser.discoveredServers.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                    Text("Scanning local network...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 16)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(bonjourBrowser.discoveredServers.enumerated()), id: \.element.id) { index, server in
+                        Button(action: {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            serverURL = server.url
+                                .replacingOccurrences(of: "ws://", with: "")
+                                .replacingOccurrences(of: "wss://", with: "")
+                        }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "desktopcomputer")
+                                    .font(.body)
+                                    .foregroundColor(.brandOrange)
+                                    .frame(width: 28)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(server.name)
+                                        .font(.body.weight(.medium))
+                                        .foregroundColor(.primary)
+                                    Text(server.url.replacingOccurrences(of: "ws://", with: ""))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+
+                                let cleanURL = server.url
+                                    .replacingOccurrences(of: "ws://", with: "")
+                                    .replacingOccurrences(of: "wss://", with: "")
+                                if serverURL == cleanURL {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.brandOrange)
+                                        .transition(.scale.combined(with: .opacity))
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < bonjourBrowser.discoveredServers.count - 1 {
+                            Divider()
+                                .padding(.leading, 56)
+                        }
+                    }
+                }
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemBackground))
+                }
+                .padding(.horizontal, 24)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: bonjourBrowser.discoveredServers.count)
     }
 }
 
 #Preview {
-    ContentView()
+    ContentView(windowSessionName: .constant(nil))
         .environmentObject(ConnectionManager())
+        .environmentObject(BiometricManager())
 }
