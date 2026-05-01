@@ -408,11 +408,16 @@ function handleMessage(ws, msg) {
         break;
 
       case "create":
-        handleCreate(ws, msg.name, msg.ephemeral === true);
+        handleCreate(ws, msg.name, msg.ephemeral === true, {
+          requestId: msg.requestId,
+        });
         break;
 
       case "attach":
-        handleAttach(ws, msg.name);
+        handleAttach(ws, msg.name, {
+          mode: msg.mode,
+          requestId: msg.requestId,
+        });
         break;
 
       case "input":
@@ -479,7 +484,7 @@ function handleList(ws) {
 /**
  * Create a new session
  */
-function handleCreate(ws, name, ephemeral = false) {
+function handleCreate(ws, name, ephemeral = false, options = {}) {
   const validation = validateSessionName(name);
   if (!validation.valid) {
     ws.send(JSON.stringify({ type: "error", message: validation.error }));
@@ -500,10 +505,30 @@ function handleCreate(ws, name, ephemeral = false) {
 
   sessionManager.create(sanitizedName, ephemeral);
   sessionManager.attach(sanitizedName, ws);
+  let attachedSessions = wsSessionsMap.get(ws);
+  if (!attachedSessions) {
+    attachedSessions = new Set();
+    wsSessionsMap.set(ws, attachedSessions);
+  }
+  if (!ephemeral) {
+    for (const sessionName of attachedSessions) {
+      if (sessionName !== sanitizedName) {
+        sessionManager.detach(sessionName, ws);
+        attachedSessions.delete(sessionName);
+      }
+    }
+  }
+  attachedSessions.add(sanitizedName);
   wsActiveSessionMap.set(ws, sanitizedName);
 
   ws.send(JSON.stringify({ type: "created", name: sanitizedName }));
-  ws.send(JSON.stringify({ type: "attached", name: sanitizedName }));
+  ws.send(
+    JSON.stringify({
+      type: "attached",
+      name: sanitizedName,
+      requestId: options.requestId,
+    }),
+  );
 
   // Broadcast updated session list to all clients (ephemeral sessions won't appear)
   broadcastSessionList();
@@ -514,7 +539,7 @@ function handleCreate(ws, name, ephemeral = false) {
  * Supports multiple simultaneous attachments for split panes.
  * Waits for all scrollback to be sent before confirming attachment.
  */
-async function handleAttach(ws, name) {
+async function handleAttach(ws, name, options = {}) {
   if (!name || typeof name !== "string") {
     ws.send(
       JSON.stringify({ type: "error", message: "Session name is required" }),
@@ -536,11 +561,22 @@ async function handleAttach(ws, name) {
     wsSessionsMap.set(ws, attachedSessions);
   }
 
+  if (options.mode !== "multi") {
+    for (const sessionName of attachedSessions) {
+      if (sessionName !== name) {
+        sessionManager.detach(sessionName, ws);
+        attachedSessions.delete(sessionName);
+      }
+    }
+  }
+
   // Skip if already attached to this session
   if (attachedSessions.has(name)) {
     // Just set as active and confirm
     wsActiveSessionMap.set(ws, name);
-    ws.send(JSON.stringify({ type: "attached", name }));
+    ws.send(
+      JSON.stringify({ type: "attached", name, requestId: options.requestId }),
+    );
     return;
   }
 
@@ -555,7 +591,9 @@ async function handleAttach(ws, name) {
     await session.scrollbackPromise;
   }
 
-  ws.send(JSON.stringify({ type: "attached", name }));
+  ws.send(
+    JSON.stringify({ type: "attached", name, requestId: options.requestId }),
+  );
 }
 
 /**
