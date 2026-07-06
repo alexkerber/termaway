@@ -483,6 +483,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         serverProcess?.standardOutput = FileHandle.nullDevice
         serverProcess?.standardError = FileHandle.nullDevice
 
+        // Set working directory to the project root so the server can resolve
+        // relative paths (apps/web, node_modules) correctly
+        if let workDir = findServerWorkingDirectory() {
+            serverProcess?.currentDirectoryURL = URL(fileURLWithPath: workDir)
+        }
+
         do {
             try serverProcess?.run()
             isRunning = true
@@ -545,12 +551,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
     func findServerScript() -> String? {
         let bundlePath = Bundle.main.bundlePath
+        let resourcePath = Bundle.main.resourcePath ?? (bundlePath + "/Contents/Resources")
 
         // When installed in /Applications, look for server relative to app
         let paths = [
+            // Bundled: Contents/Resources/termaway/server/index.js (shipped inside the app)
+            resourcePath + "/termaway/server/index.js",
             // Dev: apps/macos/TermAway.app -> ../../../server/index.js (up 3 levels from app bundle)
             (((bundlePath as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent + "/server/index.js",
-            // Installed: /Applications/TermAway.app -> ~/Developer/termaway/server/index.js
+            // Installed from source: /Applications/TermAway.app -> ~/Developer/termaway/server/index.js
             NSHomeDirectory() + "/Developer/termaway/server/index.js",
             // Current directory
             FileManager.default.currentDirectoryPath + "/server/index.js"
@@ -559,6 +568,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         for path in paths {
             if FileManager.default.fileExists(atPath: path) {
                 return path
+            }
+        }
+        return nil
+    }
+
+    func findServerWorkingDirectory() -> String? {
+        let bundlePath = Bundle.main.bundlePath
+        let resourcePath = Bundle.main.resourcePath ?? (bundlePath + "/Contents/Resources")
+
+        let dirs = [
+            // Bundled: Contents/Resources/termaway/
+            resourcePath + "/termaway",
+            // Dev: repo root (3 levels up from app bundle)
+            (((bundlePath as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent,
+            // Installed from source
+            NSHomeDirectory() + "/Developer/termaway",
+            // Current directory
+            FileManager.default.currentDirectoryPath
+        ]
+
+        for dir in dirs {
+            if FileManager.default.fileExists(atPath: dir + "/server/index.js") {
+                return dir
             }
         }
         return nil
