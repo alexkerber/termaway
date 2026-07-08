@@ -551,7 +551,16 @@ function onAuthenticated() {
       term.clear();
       term.reset();
     }
-    ws.send(JSON.stringify({ type: "attach", name: currentSession }));
+    pendingSession = currentSession;
+    attachGeneration += 1;
+    ws.send(
+      JSON.stringify({
+        type: "attach",
+        name: currentSession,
+        mode: "single",
+        requestId: attachGeneration,
+      }),
+    );
   }
 }
 

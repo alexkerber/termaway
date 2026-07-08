@@ -409,6 +409,7 @@ function handleMessage(ws, msg) {
 
       case "create":
         handleCreate(ws, msg.name, msg.ephemeral === true, {
+          mode: msg.mode,
           requestId: msg.requestId,
         });
         break;
@@ -510,7 +511,10 @@ function handleCreate(ws, name, ephemeral = false, options = {}) {
     attachedSessions = new Set();
     wsSessionsMap.set(ws, attachedSessions);
   }
-  if (!ephemeral) {
+  // Only collapse to a single attachment when the client explicitly asks for
+  // single mode (web terminal). Clients that multi-attach for split panes
+  // (iOS) send no mode and must keep their other sessions attached.
+  if (options.mode === "single" && !ephemeral) {
     for (const sessionName of attachedSessions) {
       if (sessionName !== sanitizedName) {
         sessionManager.detach(sessionName, ws);
@@ -561,7 +565,10 @@ async function handleAttach(ws, name, options = {}) {
     wsSessionsMap.set(ws, attachedSessions);
   }
 
-  if (options.mode !== "multi") {
+  // Single mode (web terminal) detaches every other session so inactive
+  // output can't leak into the active tab. Split-pane clients (iOS) send no
+  // mode and keep all their attachments live.
+  if (options.mode === "single") {
     for (const sessionName of attachedSessions) {
       if (sessionName !== name) {
         sessionManager.detach(sessionName, ws);
