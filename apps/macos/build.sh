@@ -28,6 +28,33 @@ swiftc -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \
     -framework Network \
     "$APP_NAME/main.swift"
 
+# Bundle the server + web client + dependencies so the app is self-contained
+BUNDLE_ROOT="$APP_BUNDLE/Contents/Resources/termaway"
+mkdir -p "$BUNDLE_ROOT"
+
+# Copy server source
+cp -R ../../server "$BUNDLE_ROOT/server"
+
+# Copy web client (served by the server as static files)
+mkdir -p "$BUNDLE_ROOT/apps"
+cp -R ../../apps/web "$BUNDLE_ROOT/apps/web"
+
+# Copy package.json and lockfile
+cp ../../package.json "$BUNDLE_ROOT/"
+cp ../../bun.lock "$BUNDLE_ROOT/" 2>/dev/null || true
+
+# Install production dependencies into the bundle
+# Use npm for maximum compatibility (node-pty prebuilds work with npm)
+cd "$BUNDLE_ROOT"
+npm install --omit=dev --no-package-lock 2>/dev/null || bun install --production 2>/dev/null || {
+    echo "Warning: dependency installation failed. The app will need a local termaway checkout to find node_modules."
+}
+
+# Fix node-pty spawn-helper permissions
+chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true
+
+cd - > /dev/null
+
 # Code sign (ad-hoc for local use)
 codesign --force --sign - "$APP_BUNDLE"
 
