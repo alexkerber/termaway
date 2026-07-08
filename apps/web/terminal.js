@@ -8,6 +8,8 @@ let ws = null;
 let term = null;
 let fitAddon = null;
 let currentSession = null;
+let pendingSession = null;
+let attachGeneration = 0;
 let sessions = [];
 let reconnectAttempts = 0;
 let reconnectTimer = null;
@@ -433,7 +435,7 @@ function handleMessage(msg) {
       break;
 
     case "output":
-      if (term) {
+      if (term && msg.name === currentSession) {
         // Check scroll position before write
         const wasAtBottom = isNearBottom();
         term.write(msg.data);
@@ -458,6 +460,13 @@ function handleMessage(msg) {
       break;
 
     case "attached":
+      if (msg.requestId && msg.requestId !== attachGeneration) {
+        return;
+      }
+      if (pendingSession && msg.name !== pendingSession) {
+        return;
+      }
+      pendingSession = null;
       currentSession = msg.name;
       updateView();
       // Send resize after attaching
@@ -542,7 +551,16 @@ function onAuthenticated() {
       term.clear();
       term.reset();
     }
-    ws.send(JSON.stringify({ type: "attach", name: currentSession }));
+    pendingSession = currentSession;
+    attachGeneration += 1;
+    ws.send(
+      JSON.stringify({
+        type: "attach",
+        name: currentSession,
+        mode: "single",
+        requestId: attachGeneration,
+      }),
+    );
   }
 }
 
@@ -668,23 +686,45 @@ function updateView() {
 // Session management functions
 function createSession(name) {
   if (ws && ws.readyState === WebSocket.OPEN) {
+    pendingSession = name;
+    attachGeneration += 1;
+    currentSession = name;
     // Clear terminal for new session
     if (term) {
       term.clear();
       term.reset();
     }
-    ws.send(JSON.stringify({ type: "create", name }));
+    updateView();
+    ws.send(
+      JSON.stringify({
+        type: "create",
+        name,
+        mode: "single",
+        requestId: attachGeneration,
+      }),
+    );
   }
 }
 
 function attachToSession(name) {
   if (ws && ws.readyState === WebSocket.OPEN) {
+    pendingSession = name;
+    attachGeneration += 1;
+    currentSession = name;
     // Clear terminal before attaching
     if (term) {
       term.clear();
       term.reset();
     }
-    ws.send(JSON.stringify({ type: "attach", name }));
+    updateView();
+    ws.send(
+      JSON.stringify({
+        type: "attach",
+        name,
+        mode: "single",
+        requestId: attachGeneration,
+      }),
+    );
   }
 }
 
