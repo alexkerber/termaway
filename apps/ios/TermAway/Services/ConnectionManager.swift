@@ -3,6 +3,16 @@ import Combine
 import UIKit
 import UserNotifications
 
+/// Debug logging that compiles to a no-op in release builds. The @autoclosure
+/// means the interpolated string is never even built when shipping, so hot-path
+/// logging (per output chunk) costs nothing in production.
+@inline(__always)
+func dlog(_ message: @autoclosure () -> String) {
+    #if DEBUG
+    print(message())
+    #endif
+}
+
 @MainActor
 class ConnectionManager: ObservableObject {
     @Published var isConnected = false
@@ -75,7 +85,7 @@ class ConnectionManager: ObservableObject {
 
         // Feed any existing buffered output immediately
         if let buffer = sessionStates[sessionName]?.outputBuffer, !buffer.isEmpty {
-            print("registerOutputHandler[\(sessionName)]: feeding \(buffer.count) buffered chars")
+            dlog("registerOutputHandler[\(sessionName)]: feeding \(buffer.count) buffered chars")
             handler(buffer)
         }
 
@@ -90,11 +100,11 @@ class ConnectionManager: ObservableObject {
     /// Send output to all handlers for a specific session
     private func notifySessionOutput(_ sessionName: String, _ data: String) {
         guard let state = sessionStates[sessionName] else {
-            print("notifySessionOutput[\(sessionName)]: no session state!")
+            dlog("notifySessionOutput[\(sessionName)]: no session state!")
             return
         }
         let handlerCount = state.outputHandlers.count
-        print("notifySessionOutput[\(sessionName)]: \(data.count) chars to \(handlerCount) handlers")
+        dlog("notifySessionOutput[\(sessionName)]: \(data.count) chars to \(handlerCount) handlers")
         for handler in state.outputHandlers.values {
             handler(data)
         }
@@ -254,7 +264,7 @@ class ConnectionManager: ObservableObject {
                     self.receiveMessage()
 
                 case .failure(let error):
-                    print("WebSocket error: \(error)")
+                    dlog("WebSocket error: \(error)")
                     self.isConnected = false
                     self.isConnecting = false
 
@@ -471,7 +481,7 @@ class ConnectionManager: ObservableObject {
             notifySessionOutput(targetSession, data)
 
         case .created(let name):
-            print("Session created: \(name)")
+            dlog("Session created: \(name)")
 
         case .attached(let name):
             // Don't switch currentSession for pane sessions (created during split)
@@ -514,7 +524,7 @@ class ConnectionManager: ObservableObject {
             }
 
         case .exited(let name, let exitCode):
-            print("Session \(name) exited with code \(exitCode)")
+            dlog("Session \(name) exited with code \(exitCode)")
             if currentSession?.name == name {
                 currentSession = nil
             }
@@ -549,7 +559,7 @@ class ConnectionManager: ObservableObject {
 
         socket.send(.string(text)) { [weak self] error in
             if let error = error {
-                print("Send error: \(error)")
+                dlog("Send error: \(error)")
                 // Don't set lastError here for send failures after disconnect
                 // as it causes confusing error messages
             }
@@ -662,7 +672,7 @@ class ConnectionManager: ObservableObject {
     func requestNotificationPermissions() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
             if let error = error {
-                print("Notification permission error: \(error)")
+                dlog("Notification permission error: \(error)")
             }
         }
     }
@@ -683,7 +693,7 @@ class ConnectionManager: ObservableObject {
 
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("Notification error: \(error)")
+                dlog("Notification error: \(error)")
             }
         }
     }

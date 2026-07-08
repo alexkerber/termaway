@@ -14,12 +14,15 @@ extension View {
 
 // MARK: - Shared Helpers
 
-/// Calculate sheet detents based on session count
+/// Calculate sheet detents based on session count.
+/// chromeHeight covers the header, the pinned "New Session" button, the list's
+/// section insets and the bottom safe area so rows are never clipped under the
+/// button. `.large` is always offered so the list can be expanded and scrolled.
 func sessionSheetDetents(for count: Int) -> Set<PresentationDetent> {
-    let baseHeight: CGFloat = 150
-    let rowHeight: CGFloat = 80
-    let calculatedHeight = baseHeight + (CGFloat(count) * rowHeight)
-    let maxHeight: CGFloat = 650
+    let chromeHeight: CGFloat = 220
+    let rowHeight: CGFloat = 84
+    let calculatedHeight = chromeHeight + (CGFloat(max(count, 1)) * rowHeight)
+    let maxHeight: CGFloat = 680
     return [.height(min(calculatedHeight, maxHeight)), .large]
 }
 
@@ -949,46 +952,45 @@ struct SessionListSheet: View {
                 }
                 Spacer()
             } else {
-                // Sessions list with bottom action area
-                ZStack(alignment: .bottom) {
-                    List {
-                        ForEach(connectionManager.sessions) { session in
-                            HStack(spacing: 12) {
-                                if isEditMode {
-                                    Button {
-                                        toggleSelection(session.name)
-                                    } label: {
-                                        Image(systemName: selectedSessions.contains(session.name)
-                                              ? "checkmark.circle.fill"
-                                              : "circle")
-                                            .foregroundColor(selectedSessions.contains(session.name)
-                                                            ? .brandOrange
-                                                            : .secondary)
-                                            .font(.title2)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-
-                                SessionRowView(session: session, isEditMode: isEditMode)
-                            }
-                            .listRowBackground(
-                                connectionManager.currentSession?.name == session.name
-                                    ? Color.brandOrange.opacity(0.1)
-                                    : Color.clear
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if isEditMode {
+                // Sessions list with a pinned bottom action button. safeAreaInset
+                // keeps the button from ever overlapping rows and lets the list
+                // scroll correctly regardless of the sheet detent height.
+                List {
+                    ForEach(connectionManager.sessions) { session in
+                        HStack(spacing: 12) {
+                            if isEditMode {
+                                Button {
                                     toggleSelection(session.name)
+                                } label: {
+                                    Image(systemName: selectedSessions.contains(session.name)
+                                          ? "checkmark.circle.fill"
+                                          : "circle")
+                                        .foregroundColor(selectedSessions.contains(session.name)
+                                                        ? .brandOrange
+                                                        : .secondary)
+                                        .font(.title2)
                                 }
+                                .buttonStyle(.plain)
+                            }
+
+                            SessionRowView(session: session, isEditMode: isEditMode)
+                        }
+                        .listRowBackground(
+                            connectionManager.currentSession?.name == session.name
+                                ? Color.brandOrange.opacity(0.1)
+                                : Color.clear
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isEditMode {
+                                toggleSelection(session.name)
                             }
                         }
                     }
-                    .listStyle(.insetGrouped)
-                    .scrollContentBackground(.hidden)
-                    .contentMargins(.bottom, 80, for: .scrollContent)
-
-                    // Bottom action area
+                }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 0) {
                         Divider()
 

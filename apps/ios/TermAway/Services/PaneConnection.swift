@@ -31,7 +31,7 @@ class PaneConnection: ObservableObject {
         serverURL = url
         storedAuthToken = authToken
 
-        print("PaneConnection: Connecting to \(url)")
+        dlog("PaneConnection: Connecting to \(url)")
 
         // Clean up any previous connection
         webSocket?.cancel(with: .goingAway, reason: nil)
@@ -62,7 +62,7 @@ class PaneConnection: ObservableObject {
     /// Create a new session with auto-generated name
     private func createNewSession() {
         let name = "pane-\(UUID().uuidString.prefix(8))"
-        print("PaneConnection: Creating session '\(name)'")
+        dlog("PaneConnection: Creating session '\(name)'")
         send(["type": "create", "name": name, "ephemeral": true])
     }
 
@@ -86,7 +86,7 @@ class PaneConnection: ObservableObject {
 
         webSocket?.send(.string(string)) { error in
             if let error = error {
-                print("PaneConnection send error: \(error)")
+                dlog("PaneConnection send error: \(error)")
             }
         }
     }
@@ -99,7 +99,7 @@ class PaneConnection: ObservableObject {
                     self?.handleMessage(message)
                     self?.receiveMessage()
                 case .failure(let error):
-                    print("PaneConnection receive error: \(error)")
+                    dlog("PaneConnection receive error: \(error)")
                     self?.isConnected = false
                 }
             }
@@ -111,7 +111,7 @@ class PaneConnection: ObservableObject {
               let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else {
-            print("PaneConnection: Failed to parse message")
+            dlog("PaneConnection: Failed to parse message")
             return
         }
 
@@ -119,7 +119,7 @@ class PaneConnection: ObservableObject {
         case "created", "attached":
             if let name = json["name"] as? String ?? json["session"] as? String {
                 sessionName = name
-                print("PaneConnection: Session '\(name)' ready")
+                dlog("PaneConnection: Session '\(name)' ready")
             }
             if let scrollback = json["scrollback"] as? String, !scrollback.isEmpty {
                 onOutput?(scrollback)
@@ -133,29 +133,29 @@ class PaneConnection: ObservableObject {
         case "auth-required":
             isConnected = true
             let required = json["required"] as? Bool ?? false
-            print("PaneConnection: auth-required, required=\(required)")
+            dlog("PaneConnection: auth-required, required=\(required)")
             if required {
                 if let token = storedAuthToken, !token.isEmpty {
-                    print("PaneConnection: Sending auth")
+                    dlog("PaneConnection: Sending auth")
                     send(["type": "auth", "password": token])
                 } else {
-                    print("PaneConnection: No auth token!")
+                    dlog("PaneConnection: No auth token!")
                 }
             } else {
                 createNewSession()
             }
 
         case "auth-success":
-            print("PaneConnection: auth success")
+            dlog("PaneConnection: auth success")
             createNewSession()
 
         case "auth-failed":
-            print("PaneConnection: auth failed")
+            dlog("PaneConnection: auth failed")
             disconnect()
 
         case "error":
             if let errorMsg = json["message"] as? String {
-                print("PaneConnection error: \(errorMsg)")
+                dlog("PaneConnection error: \(errorMsg)")
             }
 
         default:
