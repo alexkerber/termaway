@@ -42,8 +42,8 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP_N
 BUILD_DIR="$(pwd)/build"
 ARCHIVE_PATH="$BUILD_DIR/$APP_NAME.xcarchive"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
-ZIP_NAME="$APP_NAME-macOS-v$VERSION.zip"
-OUT_ZIP="$REPO_ROOT/builds/$ZIP_NAME"
+DMG_NAME="$APP_NAME-macOS-v$VERSION.dmg"
+OUT_DMG="$REPO_ROOT/builds/$DMG_NAME"
 
 echo "==> Building TermAway v$VERSION"
 
@@ -120,13 +120,30 @@ else
   echo "==> Skipping notarization (--no-notarize)"
 fi
 
-# ---- Final distributable zip ------------------------------------------------
-echo "==> Creating $OUT_ZIP"
-rm -f "$OUT_ZIP"
-/usr/bin/ditto -c -k --keepParent "$APP_PATH" "$OUT_ZIP"
+# ---- Final distributable DMG ------------------------------------------------
+# Ship a DMG, not a zip: a zipped .app can have its code signature broken by
+# some extraction tools (Chrome/Archive Utility/unzip), which makes Gatekeeper
+# report a spurious "app is damaged" error even on a properly notarized build.
+# A DMG is a disk image — the bundle is never re-extracted file-by-file, so the
+# signature stays intact regardless of the user's tooling.
+echo "==> Creating DMG"
+DMG_STAGE="$BUILD_DIR/dmg"
+rm -rf "$DMG_STAGE"; mkdir -p "$DMG_STAGE"
+cp -R "$APP_PATH" "$DMG_STAGE/"        # stapled app; staple travels with it
+ln -s /Applications "$DMG_STAGE/Applications"
+rm -f "$OUT_DMG"
+hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$OUT_DMG"
+
+if [[ "$DO_NOTARIZE" -eq 1 ]]; then
+  echo "==> Signing + notarizing DMG"
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$OUT_DMG"
+  xcrun notarytool submit "$OUT_DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$OUT_DMG"
+  xcrun stapler validate "$OUT_DMG"
+fi
 
 echo ""
-echo "Done: $OUT_ZIP"
+echo "Done: $OUT_DMG"
 if [[ "$DO_NOTARIZE" -ne 1 ]]; then
   echo "NOTE: this build is NOT notarized. Set up the notarytool profile and"
   echo "re-run without --no-notarize before publishing to end users."
