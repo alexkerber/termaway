@@ -1,6 +1,6 @@
 {
   "name": "termaway",
-  "version": "1.0.0",
+  "version": "1.4.1",
   "description": "TermAway - Your Mac terminal, on your iPad. Self-hosted LAN terminal access.",
   "type": "module",
   "main": "server/index.js",

@@ -459,7 +459,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         guard !isRunning else { return }
 
         guard let node = findNodePath() else {
-            showAlert(message: "Node.js not found. Please install Node.js 22 LTS.")
+            showNodeMissingAlert()
             return
         }
 
@@ -771,6 +771,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.runModal()
+    }
+
+    /// Node.js is required to run the bundled server. Show a clear, actionable
+    /// alert with a direct link to the download page instead of a dead end.
+    func showNodeMissingAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Node.js is required"
+        alert.informativeText =
+            "TermAway runs a small local server that needs Node.js 18 or newer. "
+            + "Install it, then start the server again."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Download Node.js")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn,
+            let url = URL(string: "https://nodejs.org/en/download")
+        {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func getLocalIP() -> String? {

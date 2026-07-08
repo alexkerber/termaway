@@ -11,6 +11,15 @@ const CONFIG = {
   maxScrollback: 2_000_000, // ~2MB of scrollback per session
 };
 
+// Verbose per-message/per-resize logging is gated behind a debug flag so a
+// production server doesn't spam its logs on every output chunk. Enable with
+// TERMAWAY_DEBUG=1 (or DEBUG=termaway). Lifecycle and error logs stay on.
+const DEBUG =
+  process.env.TERMAWAY_DEBUG === "1" || process.env.DEBUG === "termaway";
+function debug(...args) {
+  if (DEBUG) console.log(...args);
+}
+
 // =============================================================================
 // Session Class
 // =============================================================================
@@ -77,9 +86,7 @@ class SessionManager {
   constructor() {
     this.sessions = new Map();
     this.clipboard = "";
-    console.log(
-      "Session manager ready (PTY mode) - OUTPUT INCLUDES SESSION NAME v2",
-    );
+    debug("Session manager ready (PTY mode)");
   }
 
   // ---------------------------------------------------------------------------
@@ -174,7 +181,7 @@ class SessionManager {
         return;
       }
 
-      console.log(
+      debug(
         `Sending scrollback (${scrollback.length} bytes, ${session.scrollback.length} chunks)`,
       );
 
@@ -207,9 +214,7 @@ class SessionManager {
       }
     });
 
-    console.log(
-      `Client attached to "${name}" (${session.clients.size} clients)`,
-    );
+    debug(`Client attached to "${name}" (${session.clients.size} clients)`);
 
     // Return both session and scrollback promise
     session.scrollbackPromise = scrollbackPromise;
@@ -302,7 +307,7 @@ class SessionManager {
 
     // Ignore tiny sizes that break terminal rendering
     if (cols < 10 || rows < 5) {
-      console.log(`Ignoring tiny resize for "${name}": ${cols}x${rows}`);
+      debug(`Ignoring tiny resize for "${name}": ${cols}x${rows}`);
       return;
     }
 
@@ -331,7 +336,7 @@ class SessionManager {
     // This prevents "resize fights" when multiple clients connect
     const now = Date.now();
     if (now - session.lastResizeAt < 100) {
-      console.log(`Ignoring rapid resize for "${name}": ${minCols}x${minRows}`);
+      debug(`Ignoring rapid resize for "${name}": ${minCols}x${minRows}`);
       return;
     }
 
@@ -339,7 +344,7 @@ class SessionManager {
     session.lastRows = minRows;
     session.lastResizeAt = now;
     session.pty.resize(minCols, minRows);
-    console.log(
+    debug(
       `Resized "${name}" to ${minCols}x${minRows} (min of ${session.clients.size} clients)`,
     );
   }
@@ -398,9 +403,7 @@ class SessionManager {
       session.pushScrollback(data);
       // Include session name so clients can route to correct pane
       const msg = { type: "output", name: session.name, data };
-      console.log(
-        `Broadcasting output for "${session.name}": ${data.length} chars`,
-      );
+      debug(`Broadcasting output for "${session.name}": ${data.length} chars`);
       session.broadcast(msg);
     });
 

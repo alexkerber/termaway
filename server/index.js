@@ -34,6 +34,15 @@ const SESSION_NAME_PATTERN = /^[a-zA-Z0-9\-_. ]+$/;
 const MAX_MESSAGE_SIZE = 1024 * 1024; // 1MB
 const MAX_INPUT_SIZE = 64 * 1024; // 64KB
 
+// Routine per-connection logging is gated behind a debug flag; the startup
+// banner, security events (rate limiting, auth failures) and errors stay on.
+// Enable with TERMAWAY_DEBUG=1 (or DEBUG=termaway).
+const DEBUG =
+  process.env.TERMAWAY_DEBUG === "1" || process.env.DEBUG === "termaway";
+function debug(...args) {
+  if (DEBUG) console.log(...args);
+}
+
 /**
  * Validate and sanitize a session name.
  * Returns { valid: true, name: trimmedName } or { valid: false, error: string }.
@@ -242,7 +251,7 @@ function broadcastClientEvent(eventType, clientIP) {
 wss.on("connection", (ws, req) => {
   const clientIP =
     req.socket.remoteAddress?.replace("::ffff:", "") || "unknown";
-  console.log(`WebSocket connected from ${clientIP}`);
+  debug(`WebSocket connected from ${clientIP}`);
 
   // Mark as alive for heartbeat
   wsAliveMap.set(ws, true);
@@ -320,7 +329,7 @@ wss.on("connection", (ws, req) => {
   }
 
   ws.on("close", () => {
-    console.log("WebSocket disconnected");
+    debug("WebSocket disconnected");
     cleanup();
   });
 
@@ -379,7 +388,7 @@ function handleAuth(ws, password) {
     // Success - clear rate limit for this IP
     authAttempts.delete(clientIP);
     wsAuthMap.set(ws, true);
-    console.log("Client authenticated successfully");
+    debug("Client authenticated successfully");
     ws.send(JSON.stringify({ type: "auth-success" }));
     if (!wasAlreadyAuthenticated) {
       broadcastClientEvent("client-connected", clientIP);
