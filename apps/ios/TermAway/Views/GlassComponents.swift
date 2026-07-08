@@ -176,8 +176,11 @@ struct ConnectionStatusPill: View {
                 .symbolEffect(.pulse, isActive: isConnected)
             Text(isConnected ? "Connected" : "Disconnected")
                 .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundColor(isConnected ? .green : .red)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
