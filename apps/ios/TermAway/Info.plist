@@ -30,8 +30,6 @@
 	<array>
 		<string>_http._tcp</string>
 	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>TermAway uses the local network to discover TermAway servers running on your Mac or other devices on your Wi-Fi.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
