@@ -241,18 +241,17 @@ import Footer from '../components/Footer.astro';
         fetch('https://api.github.com/repos/alexkerber/termaway/releases/latest')
             .then(res => res.json())
             .then(release => {
+                const releasesUrl = 'https://github.com/alexkerber/termaway/releases';
                 const macAsset = release.assets.find(a => a.name.includes('macOS'));
-                if (macAsset) {
-                    document.querySelectorAll('.download-link-macos').forEach(el => {
-                        el.href = macAsset.browser_download_url;
-                    });
-                }
+                document.querySelectorAll('.download-link-macos').forEach(el => {
+                    // Fall back to the releases page if this release doesn't
+                    // (yet) carry a macOS build, so the button is never dead.
+                    el.href = macAsset ? macAsset.browser_download_url : releasesUrl;
+                });
                 const linuxAsset = release.assets.find(a => a.name.includes('Linux'));
-                if (linuxAsset) {
-                    document.querySelectorAll('.download-link-linux').forEach(el => {
-                        el.href = linuxAsset.browser_download_url;
-                    });
-                }
+                document.querySelectorAll('.download-link-linux').forEach(el => {
+                    el.href = linuxAsset ? linuxAsset.browser_download_url : releasesUrl;
+                });
             })
             .catch(() => {
                 document.querySelectorAll('.download-link-macos').forEach(el => {
