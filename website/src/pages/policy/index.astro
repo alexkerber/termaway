@@ -29,7 +29,7 @@ import Footer from '../../components/Footer.astro';
                     <span class="platform-badge">iPadOS</span>
                 </p>
                 <p>
-                    TermAway is designed with privacy as a core principle. The application operates entirely on your local network and does not transmit data to external servers.
+                    TermAway runs on your own machine, over your LAN or your private Tailscale network. We operate no cloud service, and your terminal data is never sent to infrastructure we run.
                 </p>
 
                 <h2>Information We Do Not Collect</h2>
@@ -46,9 +46,9 @@ import Footer from '../../components/Footer.astro';
                 </ul>
 
                 <h2>How TermAway Works</h2>
-                <h3>Local Network Only</h3>
+                <h3>Self-Hosted</h3>
                 <p>
-                    TermAway operates exclusively on your local network (LAN). Your terminal sessions are transmitted directly between your devices over your home or office network. <strong>No data ever leaves your network or passes through our servers.</strong>
+                    TermAway runs on your own machine. Your terminal sessions travel over your local network, or over Tailscale's end-to-end encrypted network when you're away. <strong>No terminal data passes through infrastructure operated by TermAway.</strong>
                 </p>
 
                 <h3>macOS Server Application</h3>
@@ -56,7 +56,7 @@ import Footer from '../../components/Footer.astro';
                     The macOS menu bar application runs a local WebSocket server on your Mac. This server:
                 </p>
                 <ul>
-                    <li>Listens only on your local network interface</li>
+                    <li>Binds to your Mac's network interfaces (your LAN, and your Tailscale interface when connected)</li>
                     <li>Creates pseudo-terminal (PTY) sessions for your shell</li>
                     <li>Maintains session data only in local memory</li>
                     <li>Does not log or store any command history beyond your shell's own history</li>
@@ -118,7 +118,7 @@ import Footer from '../../components/Footer.astro';
 
                 <h2>Third-Party Services</h2>
                 <p>
-                    The TermAway applications do not integrate with or send data to any third-party services. The applications function entirely offline and on your local network.
+                    The TermAway project operates no analytics service or cloud relay. If you use Tailscale, its infrastructure may relay end-to-end encrypted packets that Tailscale cannot decrypt.
                 </p>
 
                 <h2>Security</h2>
@@ -126,7 +126,7 @@ import Footer from '../../components/Footer.astro';
                     We take the security of your terminal sessions seriously:
                 </p>
                 <ul>
-                    <li><strong>Local network only:</strong> Data never traverses the public internet</li>
+                    <li><strong>No port forwarding required:</strong> reach it on your LAN or over your private Tailscale network, with no public TermAway URL</li>
                     <li><strong>Optional authentication:</strong> Password protection for server access</li>
                     <li><strong>No cloud dependency:</strong> Your data remains under your control</li>
                     <li><strong>Open source:</strong> The application code is available for review on GitHub</li>

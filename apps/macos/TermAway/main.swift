@@ -185,6 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
     var serverProcess: Process?
     var isRunning = false
     var localIP: String = "localhost"
+    var tailscaleIP: String? = nil
     let port = "3000"
     var preferencesWindow: NSWindow?
     var sleepAssertionID: IOPMAssertionID = 0
@@ -309,6 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         localIP = getLocalIP() ?? "localhost"
+        refreshTailscaleIP()
         applyDisplayMode()
         startServer()
     }
@@ -398,6 +400,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             let ipItem = NSMenuItem(title: urlString, action: #selector(copyURL), keyEquivalent: "c")
             ipItem.toolTip = "Click to copy"
             menu.addItem(ipItem)
+
+            // Tailscale URL — reach TermAway from anywhere on the user's tailnet
+            if let tsIP = tailscaleIP {
+                let tsItem = NSMenuItem(title: "Tailscale: http://\(tsIP):\(port)", action: #selector(copyTailscaleURL), keyEquivalent: "")
+                tsItem.toolTip = "Click to copy — reach TermAway from anywhere on your tailnet"
+                menu.addItem(tsItem)
+
+                let noteItem = NSMenuItem(title: "Anyone on your tailnet can reach this — set a password", action: nil, keyEquivalent: "")
+                noteItem.isEnabled = false
+                menu.addItem(noteItem)
+            }
 
             // Connected clients with submenu
             let clientCount = connectedClients.count
@@ -638,9 +651,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         NSPasteboard.general.setString(urlString, forType: .string)
     }
 
+    @objc func copyTailscaleURL() {
+        guard let tsIP = tailscaleIP else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("http://\(tsIP):\(port)", forType: .string)
+    }
+
     // MARK: - NSMenuDelegate
 
     func menuWillOpen(_ menu: NSMenu) {
+        // Kick off a fresh Tailscale lookup (async, non-blocking); the menu
+        // uses the last cached value for this build and picks up changes next open.
+        refreshTailscaleIP()
         // Rebuild menu with current data when it opens
         rebuildMenuItems(menu)
         // Also request fresh data for next time
@@ -681,6 +703,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             let ipItem = NSMenuItem(title: urlString, action: #selector(copyURL), keyEquivalent: "c")
             ipItem.toolTip = "Click to copy"
             menu.addItem(ipItem)
+
+            // Tailscale URL — reach TermAway from anywhere on the user's tailnet
+            if let tsIP = tailscaleIP {
+                let tsItem = NSMenuItem(title: "Tailscale: http://\(tsIP):\(port)", action: #selector(copyTailscaleURL), keyEquivalent: "")
+                tsItem.toolTip = "Click to copy — reach TermAway from anywhere on your tailnet"
+                menu.addItem(tsItem)
+
+                let noteItem = NSMenuItem(title: "Anyone on your tailnet can reach this — set a password", action: nil, keyEquivalent: "")
+                noteItem.isEnabled = false
+                menu.addItem(noteItem)
+            }
 
             // Connected clients with submenu
             let clientCount = connectedClients.count
@@ -796,23 +829,92 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
 
         guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
 
         for ifptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
             let interface = ifptr.pointee
-            let addrFamily = interface.ifa_addr.pointee.sa_family
+            // Darwin allows ifa_addr to be NULL — deref only after checking.
+            guard let addr = interface.ifa_addr,
+                  addr.pointee.sa_family == UInt8(AF_INET) else { continue }
 
-            if addrFamily == UInt8(AF_INET) {
-                let name = String(cString: interface.ifa_name)
-                if name == "en0" {
-                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
-                               &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
-                    address = String(cString: hostname)
-                }
+            if String(cString: interface.ifa_name) == "en0" {
+                var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                getnameinfo(addr, socklen_t(addr.pointee.sa_len),
+                            &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
+                address = String(cString: hostname)
             }
         }
-        freeifaddrs(ifaddr)
         return address
+    }
+
+    /// Refresh `tailscaleIP` off the main thread — the CLI is a subprocess and
+    /// must never block the menu opening.
+    func refreshTailscaleIP() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let ip = self?.getTailscaleIP()
+            DispatchQueue.main.async { self?.tailscaleIP = ip }
+        }
+    }
+
+    /// The machine's Tailscale address, if connected. Uses the official
+    /// Tailscale CLI (authoritative — the 100.64/10 range isn't exclusive to
+    /// Tailscale, and a tailnet can be IPv6-only). Returns nil if Tailscale
+    /// isn't installed or up. Blocks briefly, so call it off the main thread.
+    func getTailscaleIP() -> String? {
+        let candidates = [
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+            "/usr/local/bin/tailscale",
+            "/opt/homebrew/bin/tailscale",
+        ]
+        guard let bin = candidates.first(where: {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }) else { return nil }
+
+        // `ip --1` returns a single address (IPv4 preferred); one call keeps the
+        // 2s timeout honest. Bracket IPv6 for use in a URL.
+        guard let ip = runTailscale(bin: bin, args: ["ip", "--1"]), !ip.isEmpty else {
+            return nil
+        }
+        return ip.contains(":") ? "[\(ip)]" : ip
+    }
+
+    /// Runs the Tailscale CLI time-boxed, returning its first output line.
+    private func runTailscale(bin: String, args: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: bin)
+        process.arguments = args
+        // The Mac App Store build ships the CLI inside the app bundle; this env
+        // var makes it act as the CLI instead of launching the GUI.
+        var env = ProcessInfo.processInfo.environment
+        env["TAILSCALE_BE_CLI"] = "1"
+        process.environment = env
+
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        // Don't let a hung CLI block us.
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 2.0) == .timedOut {
+            process.terminate()
+            return nil
+        }
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?
+            .split(whereSeparator: \.isNewline).first
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     // MARK: - Notifications
