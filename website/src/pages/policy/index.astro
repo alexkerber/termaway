@@ -29,7 +29,7 @@ import Footer from '../../components/Footer.astro';
                     <span class="platform-badge">iPadOS</span>
                 </p>
                 <p>
-                    TermAway is designed with privacy as a core principle. The application runs on your own machine, over your LAN or your private Tailscale network, and does not transmit your terminal data to any TermAway server.
+                    TermAway runs on your own machine, over your LAN or your private Tailscale network. We operate no cloud service, and your terminal data is never sent to infrastructure we run.
                 </p>
 
                 <h2>Information We Do Not Collect</h2>
@@ -48,7 +48,7 @@ import Footer from '../../components/Footer.astro';
                 <h2>How TermAway Works</h2>
                 <h3>Self-Hosted</h3>
                 <p>
-                    TermAway runs on your own machine. Your terminal sessions travel over your local network, or over your private Tailscale (WireGuard) network when you're away — directly between your devices when possible, or via Tailscale's encrypted relays. <strong>No terminal data ever passes through a TermAway server.</strong>
+                    TermAway runs on your own machine. Your terminal sessions travel over your local network, or over Tailscale's end-to-end encrypted network when you're away. <strong>No terminal data passes through infrastructure operated by TermAway.</strong>
                 </p>
 
                 <h3>macOS Server Application</h3>
@@ -118,7 +118,7 @@ import Footer from '../../components/Footer.astro';
 
                 <h2>Third-Party Services</h2>
                 <p>
-                    The TermAway applications do not send your data to any third-party service. If you choose to connect over Tailscale, its encrypted network carries your traffic end-to-end — unreadable to us and to Tailscale.
+                    The TermAway project operates no analytics service or cloud relay. If you use Tailscale, its infrastructure may relay end-to-end encrypted packets that Tailscale cannot decrypt.
                 </p>
 
                 <h2>Security</h2>
@@ -126,7 +126,7 @@ import Footer from '../../components/Footer.astro';
                     We take the security of your terminal sessions seriously:
                 </p>
                 <ul>
-                    <li><strong>No public exposure:</strong> never exposed to the public internet — reach it on your LAN, or over your private Tailscale network</li>
+                    <li><strong>No port forwarding required:</strong> reach it on your LAN or over your private Tailscale network, with no public TermAway URL</li>
                     <li><strong>Optional authentication:</strong> Password protection for server access</li>
                     <li><strong>No cloud dependency:</strong> Your data remains under your control</li>
                     <li><strong>Open source:</strong> The application code is available for review on GitHub</li>

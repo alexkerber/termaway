@@ -870,14 +870,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             FileManager.default.isExecutableFile(atPath: $0)
         }) else { return nil }
 
-        // Prefer IPv4; fall back to IPv6 (bracketed for use in a URL).
-        if let v4 = runTailscale(bin: bin, args: ["ip", "-4"]), !v4.isEmpty {
-            return v4
+        // `ip --1` returns a single address (IPv4 preferred); one call keeps the
+        // 2s timeout honest. Bracket IPv6 for use in a URL.
+        guard let ip = runTailscale(bin: bin, args: ["ip", "--1"]), !ip.isEmpty else {
+            return nil
         }
-        if let v6 = runTailscale(bin: bin, args: ["ip", "-6"]), !v6.isEmpty {
-            return "[\(v6)]"
-        }
-        return nil
+        return ip.contains(":") ? "[\(ip)]" : ip
     }
 
     /// Runs the Tailscale CLI time-boxed, returning its first output line.
@@ -893,7 +891,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
         let outPipe = Pipe()
         process.standardOutput = outPipe
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
