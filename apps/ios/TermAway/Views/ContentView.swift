@@ -1,4 +1,5 @@
 import SwiftUI
+import SafariServices
 
 // MARK: - iOS 18+ Toolbar Visibility Extension
 extension View {
@@ -8,6 +9,69 @@ extension View {
             self.toolbarBackgroundVisibility(.hidden, for: .navigationBar)
         } else {
             self
+        }
+    }
+}
+
+// MARK: - Dev-Server Port Preview
+
+/// Wraps a URL so it can drive a `.sheet(item:)`.
+struct PreviewLink: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+/// Presents a URL in an in-app Safari view (dev-server previews).
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
+
+/// A row of tappable chips for a session's listening dev-server ports. Tapping
+/// opens `http://<host>:<port>` in an in-app Safari view.
+struct PortChipsBar: View {
+    let ports: [Int]
+    let host: String
+    var lightMode: Bool = false
+    @State private var preview: PreviewLink?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ports, id: \.self) { port in
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        if let url = URL(string: "http://\(host):\(port)") {
+                            preview = PreviewLink(url: url)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "safari")
+                                .font(.system(size: 11, weight: .semibold))
+                            // verbatim so the port isn't localized (":3 000")
+                            Text(verbatim: ":\(port)")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(Color.brandOrange)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule().fill(.ultraThinMaterial)
+                                .environment(\.colorScheme, lightMode ? .light : .dark)
+                        )
+                        .overlay(Capsule().strokeBorder(Color.brandOrange.opacity(0.3), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(height: 34)
+        .sheet(item: $preview) { link in
+            SafariView(url: link.url).ignoresSafeArea()
         }
     }
 }
@@ -454,6 +518,20 @@ struct TerminalDetailView: View {
                     }
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearch)
 
+                    // Dev-server port chips for the currently viewed session.
+                    // Hidden on iPad when a split pane shows a different session,
+                    // whose ports aren't the current session's.
+                    if !showSearch,
+                       let session = connectionManager.currentSession,
+                       splitPaneManager.focusedSessionName == nil
+                           || splitPaneManager.focusedSessionName == session.name,
+                       !session.ports.isEmpty,
+                       let host = URLComponents(string: connectionManager.serverURL ?? "")?.host {
+                        PortChipsBar(ports: session.ports, host: host, lightMode: themeManager.isChromeLightMode)
+                            .padding(.top, 2)
+                            .transition(.opacity)
+                    }
+
                     Spacer()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .toggleTerminalSearch)) { _ in
@@ -747,6 +825,20 @@ struct SessionCompactView: View {
                         }
                     }
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearch)
+
+                    // Dev-server port chips for the currently viewed session.
+                    // Hidden on iPad when a split pane shows a different session,
+                    // whose ports aren't the current session's.
+                    if !showSearch,
+                       let session = connectionManager.currentSession,
+                       splitPaneManager.focusedSessionName == nil
+                           || splitPaneManager.focusedSessionName == session.name,
+                       !session.ports.isEmpty,
+                       let host = URLComponents(string: connectionManager.serverURL ?? "")?.host {
+                        PortChipsBar(ports: session.ports, host: host, lightMode: themeManager.isChromeLightMode)
+                            .padding(.top, 2)
+                            .transition(.opacity)
+                    }
 
                     Spacer()
                 }

@@ -7,12 +7,15 @@ struct Session: Identifiable, Codable, Equatable {
     let createdAt: Date?
     /// Server flagged this session as needing the user (agent bell or hook).
     let needsAttention: Bool
+    /// Off-box-reachable listening ports in this session's process tree.
+    let ports: [Int]
 
-    init(name: String, clientCount: Int = 0, createdAt: Date? = nil, needsAttention: Bool = false) {
+    init(name: String, clientCount: Int = 0, createdAt: Date? = nil, needsAttention: Bool = false, ports: [Int] = []) {
         self.name = name
         self.clientCount = clientCount
         self.createdAt = createdAt
         self.needsAttention = needsAttention
+        self.ports = ports
     }
 }
 
@@ -42,7 +45,8 @@ enum ServerMessage {
                     guard let name = item["name"] as? String else { return nil }
                     let clientCount = item["clientCount"] as? Int ?? 0
                     let needsAttention = item["needsAttention"] as? Bool ?? false
-                    return Session(name: name, clientCount: clientCount, needsAttention: needsAttention)
+                    let ports = item["ports"] as? [Int] ?? []
+                    return Session(name: name, clientCount: clientCount, needsAttention: needsAttention, ports: ports)
                 }
                 self = .sessions(sessions)
             } else {

@@ -38,7 +38,8 @@ struct TerminalContainerView: View {
                     terminalView: $terminalView,
                     sessionName: session.name
                 )
-                .padding(.top, 44)
+                // Extra top room for the port-chip row when this session has ports.
+                .padding(.top, session.ports.isEmpty ? 44 : 80)
                 .padding(.horizontal, 8)
                 .padding(.bottom, bottomPadding(safeArea: geo.safeAreaInsets.bottom))
 
