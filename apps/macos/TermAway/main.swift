@@ -185,6 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
     var serverProcess: Process?
     var isRunning = false
     var localIP: String = "localhost"
+    var tailscaleIP: String? = nil
     let port = "3000"
     var preferencesWindow: NSWindow?
     var sleepAssertionID: IOPMAssertionID = 0
@@ -309,6 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         localIP = getLocalIP() ?? "localhost"
+        tailscaleIP = getTailscaleIP()
         applyDisplayMode()
         startServer()
     }
@@ -398,6 +400,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             let ipItem = NSMenuItem(title: urlString, action: #selector(copyURL), keyEquivalent: "c")
             ipItem.toolTip = "Click to copy"
             menu.addItem(ipItem)
+
+            // Tailscale URL — reach TermAway from anywhere on the user's tailnet
+            if let tsIP = tailscaleIP {
+                let tsItem = NSMenuItem(title: "Tailscale: http://\(tsIP):\(port)", action: #selector(copyTailscaleURL), keyEquivalent: "")
+                tsItem.toolTip = "Click to copy — reach TermAway from anywhere on your tailnet"
+                menu.addItem(tsItem)
+
+                let noteItem = NSMenuItem(title: "Anyone on your tailnet can reach this — set a password", action: nil, keyEquivalent: "")
+                noteItem.isEnabled = false
+                menu.addItem(noteItem)
+            }
 
             // Connected clients with submenu
             let clientCount = connectedClients.count
@@ -638,9 +651,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         NSPasteboard.general.setString(urlString, forType: .string)
     }
 
+    @objc func copyTailscaleURL() {
+        guard let tsIP = tailscaleIP else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("http://\(tsIP):\(port)", forType: .string)
+    }
+
     // MARK: - NSMenuDelegate
 
     func menuWillOpen(_ menu: NSMenu) {
+        // Refresh the Tailscale address (it can come and go) before rebuilding.
+        tailscaleIP = getTailscaleIP()
         // Rebuild menu with current data when it opens
         rebuildMenuItems(menu)
         // Also request fresh data for next time
@@ -681,6 +702,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             let ipItem = NSMenuItem(title: urlString, action: #selector(copyURL), keyEquivalent: "c")
             ipItem.toolTip = "Click to copy"
             menu.addItem(ipItem)
+
+            // Tailscale URL — reach TermAway from anywhere on the user's tailnet
+            if let tsIP = tailscaleIP {
+                let tsItem = NSMenuItem(title: "Tailscale: http://\(tsIP):\(port)", action: #selector(copyTailscaleURL), keyEquivalent: "")
+                tsItem.toolTip = "Click to copy — reach TermAway from anywhere on your tailnet"
+                menu.addItem(tsItem)
+
+                let noteItem = NSMenuItem(title: "Anyone on your tailnet can reach this — set a password", action: nil, keyEquivalent: "")
+                noteItem.isEnabled = false
+                menu.addItem(noteItem)
+            }
 
             // Connected clients with submenu
             let clientCount = connectedClients.count
@@ -812,6 +844,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             }
         }
         freeifaddrs(ifaddr)
+        return address
+    }
+
+    /// The machine's Tailscale address, if connected. Tailscale hands out
+    /// tailnet IPs in the 100.64.0.0/10 CGNAT range (on a utun interface whose
+    /// number varies), so match by range rather than interface name.
+    func getTailscaleIP() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
+
+        for ifptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
+            let interface = ifptr.pointee
+            guard interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
+                        &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
+            let ip = String(cString: hostname)
+
+            let parts = ip.split(separator: ".").compactMap { Int($0) }
+            if parts.count == 4, parts[0] == 100, (64...127).contains(parts[1]) {
+                address = ip
+            }
+        }
         return address
     }
 
