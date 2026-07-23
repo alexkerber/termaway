@@ -34,6 +34,11 @@ class ConnectionManager: ObservableObject {
     private let maxReconnectAttempts = 10
     private var appLifecycleObserver: NSObjectProtocol?
 
+    /// A session a tapped notification wants opened, resolved against the next
+    /// authoritative session list (covers cold launch and a not-yet-connected
+    /// socket).
+    private var pendingSessionToOpen: String?
+
     // MARK: - Per-Session Output Handling
     //
     // Split panes show DIFFERENT sessions simultaneously.
@@ -135,6 +140,7 @@ class ConnectionManager: ObservableObject {
             "connectionNotificationsEnabled": true,
             "agentNotificationsEnabled": true,
         ])
+
 
         // Load saved server URL or use default
         if UserDefaults.standard.string(forKey: "serverURL") == nil {
@@ -461,6 +467,25 @@ class ConnectionManager: ObservableObject {
         switch message {
         case .sessions(let sessionList):
             sessions = sessionList
+            // A tapped notification may be waiting to open a session. Consume it
+            // once, on this authoritative list, whether or not the name is still
+            // present — otherwise a reused name could later open unexpectedly.
+            if let pending = pendingSessionToOpen {
+                pendingSessionToOpen = nil
+                if let target = sessions.first(where: { $0.name == pending }) {
+                    // Set currentSession synchronously so the generic auto-select
+                    // (here and in ContentView) doesn't attach a second session.
+                    currentSession = target
+                    // Mirror the server's active session (attach makes it active)
+                    // so attention ACK/notify routing isn't left pointing at the
+                    // previously-viewed session.
+                    activeSessionName = pending
+                    lastSessionName = pending
+                    attachToSession(pending)
+                    return
+                }
+                // Session gone or renamed — fall through to normal selection.
+            }
             // Update current session if it still exists
             if let current = currentSession {
                 currentSession = sessions.first { $0.name == current.name }
@@ -717,14 +742,28 @@ class ConnectionManager: ObservableObject {
 
         guard agentNotificationsEnabled else { return }
         let label = name ?? "Terminal"
-        showNotification(title: title ?? "\(label) needs input", body: body ?? "")
+        showNotification(title: title ?? "\(label) needs input", body: body ?? "", sessionName: name)
     }
 
-    private func showNotification(title: String, body: String) {
+    /// Open a session from a tapped notification. Resolved against the next
+    /// authoritative session list (see the `.sessions` handler): if connected we
+    /// request a fresh list, otherwise we connect and let it arrive.
+    func openSession(named name: String) {
+        pendingSessionToOpen = name
+        if isConnected {
+            sendMessage(["type": "list"])
+        } else if !isConnecting {
+            connect()
+        }
+    }
+
+    private func showNotification(title: String, body: String, sessionName: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = title
         if !body.isEmpty { content.body = body }
         content.sound = .default
+        // Carries the session so a tap can deep-link straight to it.
+        if let sessionName { content.userInfo = ["sessionName": sessionName] }
 
         let request = UNNotificationRequest(
             identifier: UUID().uuidString,
