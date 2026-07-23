@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UserNotifications
 
 // MARK: - Brand Colors
 extension Color {
@@ -62,8 +64,37 @@ enum SharedState {
     static let keyboardShortcutState = KeyboardShortcutState()
 }
 
+// MARK: - App Delegate (notification deep-linking)
+
+/// Installs the notification delegate at the launch point Apple requires
+/// (`didFinishLaunchingWithOptions`) so a tap that cold-launches the app is
+/// delivered. On tap it routes to the named session; ConnectionManager buffers
+/// it (pendingSessionToOpen) until the session list is authoritative.
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let name = response.notification.request.content.userInfo["sessionName"] as? String
+        // Complete only after we've handed the session off, so a
+        // background-launched app isn't suspended before routing.
+        Task { @MainActor in
+            if let name {
+                SharedState.connectionManager.openSession(named: name)
+            }
+            completionHandler()
+        }
+    }
+}
+
 @main
 struct TermAwayApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
