@@ -42,7 +42,7 @@ import Footer from '../../components/Footer.astro';
 
                 <h2>Access from anywhere with Tailscale</h2>
                 <p>
-                    On your own Wi-Fi, TermAway works out of the box. To reach it from anywhere — a coffee shop, your phone on cellular — add <a href="https://tailscale.com" target="_blank">Tailscale</a>, a free private network (WireGuard) that connects your own devices directly. Your terminal still never touches a third-party server.
+                    On your own Wi-Fi, TermAway works out of the box. To reach it from anywhere — a coffee shop, your phone on cellular — add <a href="https://tailscale.com" target="_blank">Tailscale</a>, a free private network (WireGuard) that links only your own devices. TermAway itself stays self-hosted — nothing runs in a TermAway cloud. Tailscale connects your devices directly when it can, and relays end-to-end-encrypted traffic through its own servers when a direct path isn't available.
                 </p>
                 <ol>
                     <li><strong>Install Tailscale</strong> on both your Mac and your iPhone or iPad, and sign in to the same account on each. It's free for personal use.</li>
@@ -57,12 +57,12 @@ import Footer from '../../components/Footer.astro';
 
                 <h3>Do I need an internet connection?</h3>
                 <p>
-                    On your own Wi-Fi, no — TermAway runs entirely over your local network, with no internet or cloud account required. To reach it from outside your network, add Tailscale (see above); traffic still flows directly between your devices, never through our servers.
+                    On your own Wi-Fi, no — TermAway runs entirely over your local network, with no internet or TermAway account required. To reach it from outside your network, add Tailscale (see above); traffic flows over your Tailscale network — directly when possible, or via Tailscale's encrypted relays — never through a TermAway server.
                 </p>
 
                 <h3>Is my data secure?</h3>
                 <p>
-                    Yes. TermAway is self-hosted and peer-to-peer — terminal data flows directly between your devices, whether on your LAN or over Tailscale's encrypted network, and never through our servers. You can set a password for server access, and TermAway is <a href="https://github.com/alexkerber/termaway" target="_blank">open source</a>, so you can inspect the code yourself.
+                    TermAway is self-hosted — your terminal data never passes through a TermAway server. Over Tailscale it's end-to-end encrypted (WireGuard); on your LAN you can enable TLS. You can set a password for server access, and TermAway is <a href="https://github.com/alexkerber/termaway" target="_blank">open source</a>, so you can inspect the code yourself.
                 </p>
 
                 <h3>My device can't find the server</h3>
@@ -87,7 +87,7 @@ import Footer from '../../components/Footer.astro';
 
                 <h3>Can I use this outside my home network?</h3>
                 <p>
-                    Yes — with Tailscale. TermAway is never exposed to the public internet (no port forwarding), but you can add Tailscale to reach it from anywhere over a private, encrypted WireGuard network that connects only your own devices. See "Access from anywhere with Tailscale" above.
+                    Yes — with Tailscale. TermAway is never exposed to the public internet (no port forwarding). Tailscale reaches it from anywhere over a private, encrypted WireGuard network that links only your own devices — connecting directly when possible, or via Tailscale's encrypted relays. See "Access from anywhere with Tailscale" above.
                 </p>
 
                 <h2>Reporting Issues</h2>

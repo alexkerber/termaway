@@ -310,7 +310,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         localIP = getLocalIP() ?? "localhost"
-        tailscaleIP = getTailscaleIP()
+        refreshTailscaleIP()
         applyDisplayMode()
         startServer()
     }
@@ -660,8 +660,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
     // MARK: - NSMenuDelegate
 
     func menuWillOpen(_ menu: NSMenu) {
-        // Refresh the Tailscale address (it can come and go) before rebuilding.
-        tailscaleIP = getTailscaleIP()
+        // Kick off a fresh Tailscale lookup (async, non-blocking); the menu
+        // uses the last cached value for this build and picks up changes next open.
+        refreshTailscaleIP()
         // Rebuild menu with current data when it opens
         rebuildMenuItems(menu)
         // Also request fresh data for next time
@@ -828,49 +829,94 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
 
         guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
-
-        for ifptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
-            let interface = ifptr.pointee
-            let addrFamily = interface.ifa_addr.pointee.sa_family
-
-            if addrFamily == UInt8(AF_INET) {
-                let name = String(cString: interface.ifa_name)
-                if name == "en0" {
-                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
-                               &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
-                    address = String(cString: hostname)
-                }
-            }
-        }
-        freeifaddrs(ifaddr)
-        return address
-    }
-
-    /// The machine's Tailscale address, if connected. Tailscale hands out
-    /// tailnet IPs in the 100.64.0.0/10 CGNAT range (on a utun interface whose
-    /// number varies), so match by range rather than interface name.
-    func getTailscaleIP() -> String? {
-        var address: String?
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
         defer { freeifaddrs(ifaddr) }
 
         for ifptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
             let interface = ifptr.pointee
-            guard interface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+            // Darwin allows ifa_addr to be NULL — deref only after checking.
+            guard let addr = interface.ifa_addr,
+                  addr.pointee.sa_family == UInt8(AF_INET) else { continue }
 
-            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
-                        &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
-            let ip = String(cString: hostname)
-
-            let parts = ip.split(separator: ".").compactMap { Int($0) }
-            if parts.count == 4, parts[0] == 100, (64...127).contains(parts[1]) {
-                address = ip
+            if String(cString: interface.ifa_name) == "en0" {
+                var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                getnameinfo(addr, socklen_t(addr.pointee.sa_len),
+                            &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
+                address = String(cString: hostname)
             }
         }
         return address
+    }
+
+    /// Refresh `tailscaleIP` off the main thread — the CLI is a subprocess and
+    /// must never block the menu opening.
+    func refreshTailscaleIP() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let ip = self?.getTailscaleIP()
+            DispatchQueue.main.async { self?.tailscaleIP = ip }
+        }
+    }
+
+    /// The machine's Tailscale address, if connected. Uses the official
+    /// Tailscale CLI (authoritative — the 100.64/10 range isn't exclusive to
+    /// Tailscale, and a tailnet can be IPv6-only). Returns nil if Tailscale
+    /// isn't installed or up. Blocks briefly, so call it off the main thread.
+    func getTailscaleIP() -> String? {
+        let candidates = [
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+            "/usr/local/bin/tailscale",
+            "/opt/homebrew/bin/tailscale",
+        ]
+        guard let bin = candidates.first(where: {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }) else { return nil }
+
+        // Prefer IPv4; fall back to IPv6 (bracketed for use in a URL).
+        if let v4 = runTailscale(bin: bin, args: ["ip", "-4"]), !v4.isEmpty {
+            return v4
+        }
+        if let v6 = runTailscale(bin: bin, args: ["ip", "-6"]), !v6.isEmpty {
+            return "[\(v6)]"
+        }
+        return nil
+    }
+
+    /// Runs the Tailscale CLI time-boxed, returning its first output line.
+    private func runTailscale(bin: String, args: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: bin)
+        process.arguments = args
+        // The Mac App Store build ships the CLI inside the app bundle; this env
+        // var makes it act as the CLI instead of launching the GUI.
+        var env = ProcessInfo.processInfo.environment
+        env["TAILSCALE_BE_CLI"] = "1"
+        process.environment = env
+
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        // Don't let a hung CLI block us.
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 2.0) == .timedOut {
+            process.terminate()
+            return nil
+        }
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?
+            .split(whereSeparator: \.isNewline).first
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     // MARK: - Notifications
