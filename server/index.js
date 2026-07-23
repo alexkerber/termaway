@@ -291,17 +291,13 @@ function getConnectedClientCount() {
 
 // Broadcast client connection event to all clients
 function broadcastClientEvent(eventType, clientIP) {
-  const message = JSON.stringify({
+  // Auth-gated: client IP/count must not reach unauthenticated sockets.
+  broadcastAll({
     type: eventType,
     clientIP,
     clientCount: getConnectedClientCount(),
     timestamp: new Date().toISOString(),
   });
-  for (const client of wss.clients) {
-    if (client.readyState === 1) {
-      client.send(message);
-    }
-  }
 }
 
 // WebSocket connection handling

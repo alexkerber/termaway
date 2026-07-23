@@ -704,19 +704,18 @@ class ConnectionManager: ObservableObject {
     }
 
     private func handleAttention(name: String?, title: String?, body: String?) {
-        guard agentNotificationsEnabled else { return }
-
         // If the app is foregrounded and the user is already viewing this
-        // session, they've seen it: acknowledge so the server clears the flag
-        // (otherwise a stale badge appears when they switch away) and skip the
-        // notification. When backgrounded we fall through and notify — that's
-        // the whole point of "your terminals, in your pocket".
+        // session, they've seen it: acknowledge so the server clears the flag,
+        // otherwise a stale badge lingers when they switch away. This runs
+        // regardless of the notification toggle — it's badge correctness, not a
+        // notification. When backgrounded we fall through and notify.
         let isForeground = UIApplication.shared.applicationState == .active
         if isForeground, let name = name, name == activeSessionName {
             setActiveSession(name)
             return
         }
 
+        guard agentNotificationsEnabled else { return }
         let label = name ?? "Terminal"
         showNotification(title: title ?? "\(label) needs input", body: body ?? "")
     }
