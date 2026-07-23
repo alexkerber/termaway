@@ -84,6 +84,7 @@ function getSessionList() {
       name,
       clientCount: info.clientCount,
       createdAt: info.createdAt,
+      needsAttention: info.needsAttention,
       isTmux: info.isTmux,
       isConnected: info.isConnected,
     };
@@ -149,6 +150,21 @@ const wss = new WebSocketServer({ server });
 // Initialize session manager
 const sessionManager = new SessionManager();
 
+// Fan out attention changes: an `attention` event drives a local notification
+// on clients, and a refreshed session list keeps the badge in sync. Passive
+// bells fire only on a real transition; explicit hook notifies always fire.
+sessionManager.onAttentionChange = (session, meta) => {
+  if (meta.source !== "clear" && (meta.source === "notify" || meta.changed)) {
+    broadcastAll({
+      type: "attention",
+      name: session.name,
+      title: meta.title,
+      body: meta.body,
+    });
+  }
+  if (meta.changed) broadcastSessionList();
+};
+
 // Heartbeat to detect stale connections
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const wsAliveMap = new WeakMap();
@@ -211,6 +227,47 @@ app.get("/api/sessions", (req, res) => {
   res.json({ sessions: sessionManager.list() });
 });
 
+// Loopback-only notification endpoint for agent hooks. An agent running on the
+// same Mac (Claude Code Stop hook, Codex, OpenCode, or any script) can flag a
+// session as needing attention:
+//   curl -s -X POST http://localhost:3000/api/notify \
+//     -H 'Content-Type: application/json' \
+//     -d '{"session":"main","title":"Claude done","body":"Task complete"}'
+// No auth by design — the loopback check is the boundary (nothing off-box can
+// reach it). `session` is optional; without it, clients get a plain banner.
+app.use(express.json({ limit: "16kb" }));
+app.post("/api/notify", (req, res) => {
+  const ip = (req.socket.remoteAddress || "").replace("::ffff:", "");
+  if (ip !== "127.0.0.1" && ip !== "::1" && ip !== "localhost") {
+    return res.status(403).json({ error: "Loopback only" });
+  }
+  // Loopback alone isn't a browser boundary: a malicious page (or DNS
+  // rebinding) can POST to localhost. Real hook callers (curl, native) send no
+  // Origin header and use application/json; browser fetch/XHR always sets
+  // Origin, and a cross-origin JSON body needs a preflight this route rejects.
+  if (req.headers.origin) {
+    return res.status(403).json({ error: "Origin not allowed" });
+  }
+  if (!req.is("application/json")) {
+    return res.status(415).json({ error: "application/json required" });
+  }
+
+  const { session, title, body } = req.body || {};
+  const notif = {
+    title: typeof title === "string" ? title.slice(0, 200) : "TermAway",
+    body: typeof body === "string" ? body.slice(0, 500) : "",
+  };
+
+  if (session && sessionManager.exists(session)) {
+    // markAttention fans out via onAttentionChange (attention event + badge).
+    sessionManager.markAttention(session, { source: "notify", ...notif });
+  } else {
+    // Unknown/omitted session: still fire a global notification banner.
+    broadcastAll({ type: "attention", ...notif });
+  }
+  res.json({ ok: true });
+});
+
 // Track which sessions each WebSocket is attached to (supports multiple for split panes)
 const wsSessionsMap = new WeakMap(); // ws -> Set<sessionName>
 
@@ -234,17 +291,13 @@ function getConnectedClientCount() {
 
 // Broadcast client connection event to all clients
 function broadcastClientEvent(eventType, clientIP) {
-  const message = JSON.stringify({
+  // Auth-gated: client IP/count must not reach unauthenticated sockets.
+  broadcastAll({
     type: eventType,
     clientIP,
     clientCount: getConnectedClientCount(),
     timestamp: new Date().toISOString(),
   });
-  for (const client of wss.clients) {
-    if (client.readyState === 1) {
-      client.send(message);
-    }
-  }
 }
 
 // WebSocket connection handling
@@ -590,6 +643,7 @@ async function handleAttach(ws, name, options = {}) {
   if (attachedSessions.has(name)) {
     // Just set as active and confirm
     wsActiveSessionMap.set(ws, name);
+    sessionManager.clearAttention(name);
     ws.send(
       JSON.stringify({ type: "attached", name, requestId: options.requestId }),
     );
@@ -601,6 +655,8 @@ async function handleAttach(ws, name, options = {}) {
 
   // Set as active session (for input routing)
   wsActiveSessionMap.set(ws, name);
+  // Opening a session acknowledges any pending attention on it.
+  sessionManager.clearAttention(name);
 
   // Wait for all scrollback chunks to be sent before confirming
   if (session.scrollbackPromise) {
@@ -676,6 +732,8 @@ function handleSetActiveSession(ws, name) {
   }
 
   wsActiveSessionMap.set(ws, name);
+  // Focusing a session acknowledges any pending attention on it.
+  sessionManager.clearAttention(name);
   ws.send(JSON.stringify({ type: "active-session-set", name }));
 }
 
@@ -919,17 +977,26 @@ function handleKickClient(ws, clientId) {
 }
 
 /**
+ * Broadcast a raw message object to every authenticated client.
+ * Gated on auth so session names and attention payloads never reach a
+ * connected-but-unauthenticated socket when a password is set. (With no
+ * password, every socket is auto-authenticated at connection.)
+ */
+function broadcastAll(message) {
+  const json = JSON.stringify(message);
+  for (const client of wss.clients) {
+    if (client.readyState === 1 && wsAuthMap.get(client)) {
+      client.send(json);
+    }
+  }
+}
+
+/**
  * Broadcast session list to all connected clients
  */
 function broadcastSessionList() {
-  const message = JSON.stringify({ type: "sessions", list: getSessionList() });
-
-  for (const client of wss.clients) {
-    if (client.readyState === 1) {
-      // WebSocket.OPEN
-      client.send(message);
-    }
-  }
+  // broadcastAll already fans out only to authenticated clients.
+  broadcastAll({ type: "sessions", list: getSessionList() });
 }
 
 // Initialize Bonjour/mDNS

@@ -46,7 +46,8 @@ struct TerminalContainerView: View {
                 if terminalView != nil && shortcutsManager.showToolbar {
                     ShortcutsToolbarView(
                         terminalView: $terminalView,
-                        bottomSafeArea: geo.safeAreaInsets.bottom
+                        bottomSafeArea: geo.safeAreaInsets.bottom,
+                        sessionName: session.name
                     )
                 }
 
@@ -132,13 +133,27 @@ extension Notification.Name {
 struct ShortcutsToolbarView: View {
     @EnvironmentObject var shortcutsManager: ShortcutsManager
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var connectionManager: ConnectionManager
     @Binding var terminalView: TerminalView?
     var bottomSafeArea: CGFloat = 0
+    let sessionName: String
 
     @State private var isToolbarVisible = true
     @State private var isKeyboardVisible = false
     @State private var keyboardHeight: CGFloat = 0
     @Namespace private var toolbarNamespace
+
+    // Composer: a multi-line draft box above the shortcuts pill. Return inserts
+    // a newline (impossible in the raw terminal), Send fires draft + Enter.
+    // Drafts persist per session so a long prompt survives a switch away.
+    @State private var composerExpanded = false
+    @State private var draft = ""
+    @State private var composerError: String?
+    @FocusState private var composerFocused: Bool
+
+    private var draftIsEmpty: Bool {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     // Icon color adapts to appearance mode
     private var iconColor: SwiftUI.Color {
@@ -146,11 +161,21 @@ struct ShortcutsToolbarView: View {
     }
 
     var body: some View {
-        // Main toolbar at bottom
-        VStack {
+        // Composer (when expanded) sits above the shortcuts pill; the whole
+        // stack is pinned to the bottom above the keyboard.
+        VStack(spacing: 8) {
             Spacer()
+            if composerExpanded {
+                composerPanel
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             toolbarContent
-                .padding(.bottom, isKeyboardVisible ? (keyboardHeight + 8) : (bottomSafeArea + 20))
+        }
+        .padding(.bottom, isKeyboardVisible ? (keyboardHeight + 8) : (bottomSafeArea + 20))
+        .onAppear { draft = connectionManager.loadDraft(for: sessionName) }
+        .onChange(of: draft) { _, newValue in
+            connectionManager.saveDraft(newValue, for: sessionName)
+            if composerError != nil { withAnimation { composerError = nil } }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
             if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
@@ -201,11 +226,54 @@ struct ShortcutsToolbarView: View {
 
     @ViewBuilder
     private var toolbarLayout: some View {
-        // Layout: shortcuts pill with optional keyboard button at the end
+        // Layout: compose toggle, then the shortcuts pill
         HStack(alignment: .center, spacing: 8) {
+            composeToggle
             shortcutsPill(fullWidth: true)
         }
         .padding(.horizontal, 16)
+    }
+
+    // A solid accent circle reads far clearer than an orange icon inside glass
+    // against the black terminal. Filled = solid orange + white icon (the
+    // primary affordance); unfilled = quiet outlined button.
+    private func accentCircleButton(icon: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        }) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(filled ? Color.white : iconColor.opacity(0.5))
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(filled ? Color.brandOrange : Color.clear))
+                .overlay(
+                    Circle().strokeBorder(
+                        filled ? Color.clear : iconColor.opacity(0.25),
+                        lineWidth: 1
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var composeToggle: some View {
+        // Solid orange when collapsed (a clear "compose" entry); once open it
+        // becomes the quiet collapse button so the orange Send is the primary.
+        accentCircleButton(
+            icon: composerExpanded ? "keyboard.chevron.compact.down" : "square.and.pencil",
+            filled: !composerExpanded
+        ) {
+            withAnimation(liquidAnimation) {
+                composerExpanded.toggle()
+            }
+            if composerExpanded {
+                // Defer so the TextField exists before we make it first responder.
+                DispatchQueue.main.async { composerFocused = true }
+            } else {
+                composerFocused = false
+            }
+        }
     }
 
     private func toggleKeyboard() {
@@ -270,10 +338,10 @@ struct ShortcutsToolbarView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 6)
+            .padding(.vertical, 10)
         }
         .frame(maxWidth: fullWidth ? .infinity : nil)
-        .frame(height: 40)
+        .frame(height: 44)
         .mask(
             HStack(spacing: 0) {
                 // Left fade
@@ -329,6 +397,84 @@ struct ShortcutsToolbarView: View {
             let bytes = Array(data)
             terminalView?.send(bytes)
         }
+    }
+
+    // MARK: - Composer
+
+    @ViewBuilder
+    private var composerPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let composerError {
+                Text(composerError)
+                    .font(.caption)
+                    .foregroundStyle(Color.brandOrange)
+                    .padding(.horizontal, 8)
+                    .transition(.opacity)
+            }
+            composerInputRow
+        }
+        .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var composerInputRow: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Message or prompt…", text: $draft, axis: .vertical)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .focused($composerFocused)
+                // Terminal input is case- and character-sensitive: never
+                // capitalize (`cd`, not `Cd`) or autocorrect / smart-quote it.
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 16))
+                .foregroundStyle(iconColor)
+                .tint(.brandOrange)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.regularMaterial)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(iconColor.opacity(0.15), lineWidth: 1)
+                )
+                .environment(\.colorScheme, themeManager.isChromeLightMode ? .light : .dark)
+
+            accentCircleButton(icon: "arrow.up", filled: !draftIsEmpty, action: sendDraft)
+                .disabled(draftIsEmpty)
+        }
+    }
+
+    private func sendDraft() {
+        guard !draftIsEmpty else { return }
+
+        let isMultiline = draft.contains(where: { $0.isNewline })
+        let bracketedPaste = terminalView?.getTerminal().bracketedPasteMode == true
+
+        // A multi-line draft is only safe to send when the focused app enabled
+        // bracketed paste mode (Claude Code, vim, a modern shell) — then we wrap
+        // it so the whole thing arrives as one paste and the trailing CR submits.
+        // With the mode off, sending raw would let each newline execute/submit a
+        // line early, and sending the wrappers would show as literal `^[[200~`.
+        // So refuse and tell the user instead of firing lines one at a time.
+        if isMultiline && !bracketedPaste {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            withAnimation {
+                composerError = "This app can’t take multi-line input right now. Remove the line breaks or send one line at a time."
+            }
+            return
+        }
+
+        let body = isMultiline
+            ? "\u{1b}[200~" + draft + "\u{1b}[201~"
+            : draft
+        connectionManager.sendInput(body + "\r", to: sessionName)
+
+        draft = ""  // onChange clears the persisted draft
+        withAnimation(liquidAnimation) { composerExpanded = false }
+        composerFocused = false
     }
 }
 

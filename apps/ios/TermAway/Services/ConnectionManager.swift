@@ -130,6 +130,12 @@ class ConnectionManager: ObservableObject {
     }
 
     init() {
+        // Notification toggles default to on until the user turns them off.
+        UserDefaults.standard.register(defaults: [
+            "connectionNotificationsEnabled": true,
+            "agentNotificationsEnabled": true,
+        ])
+
         // Load saved server URL or use default
         if UserDefaults.standard.string(forKey: "serverURL") == nil {
             UserDefaults.standard.set("ws://192.168.1.231:3000", forKey: "serverURL")
@@ -436,6 +442,16 @@ class ConnectionManager: ObservableObject {
             }
             return
 
+        case "attention":
+            // A session's agent rang the bell or a hook fired. The badge is
+            // driven by the session list; here we just raise a notification.
+            handleAttention(
+                name: json["name"] as? String,
+                title: json["title"] as? String,
+                body: json["body"] as? String
+            )
+            return
+
         default:
             break
         }
@@ -506,6 +522,7 @@ class ConnectionManager: ObservableObject {
             }
             sessionStates.removeValue(forKey: name)
             sessions.removeAll { $0.name == name }
+            saveDraft("", for: name)  // don't let a reused name revive an old draft
             for callback in sessionRemovedCallbacks.values { callback(name) }
 
         case .renamed(let oldName, let newName):
@@ -519,6 +536,10 @@ class ConnectionManager: ObservableObject {
             if let state = sessionStates.removeValue(forKey: oldName) {
                 sessionStates[newName] = state
             }
+            // Carry any composer draft over to the new name.
+            let draft = loadDraft(for: oldName)
+            if !draft.isEmpty { saveDraft(draft, for: newName) }
+            saveDraft("", for: oldName)
             if let index = sessions.firstIndex(where: { $0.name == oldName }) {
                 sessions[index] = Session(name: newName)
             }
@@ -528,6 +549,7 @@ class ConnectionManager: ObservableObject {
             if currentSession?.name == name {
                 currentSession = nil
             }
+            saveDraft("", for: name)  // session is gone; don't strand a draft under its name
             for callback in sessionRemovedCallbacks.values { callback(name) }
 
         case .error(let message):
@@ -641,14 +663,13 @@ class ConnectionManager: ObservableObject {
     }
 
     var connectionNotificationsEnabled: Bool {
-        get {
-            // Default to true
-            if UserDefaults.standard.object(forKey: "connectionNotificationsEnabled") == nil {
-                return true
-            }
-            return UserDefaults.standard.bool(forKey: "connectionNotificationsEnabled")
-        }
+        get { UserDefaults.standard.bool(forKey: "connectionNotificationsEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "connectionNotificationsEnabled") }
+    }
+
+    var agentNotificationsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "agentNotificationsEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "agentNotificationsEnabled") }
     }
 
     func sendClipboard(_ content: String) {
@@ -679,10 +700,30 @@ class ConnectionManager: ObservableObject {
 
     private func showConnectionNotification(clientIP: String) {
         guard connectionNotificationsEnabled else { return }
+        showNotification(title: "Client Connected", body: "\(clientIP) connected to your Mac")
+    }
 
+    private func handleAttention(name: String?, title: String?, body: String?) {
+        // If the app is foregrounded and the user is already viewing this
+        // session, they've seen it: acknowledge so the server clears the flag,
+        // otherwise a stale badge lingers when they switch away. This runs
+        // regardless of the notification toggle — it's badge correctness, not a
+        // notification. When backgrounded we fall through and notify.
+        let isForeground = UIApplication.shared.applicationState == .active
+        if isForeground, let name = name, name == activeSessionName {
+            setActiveSession(name)
+            return
+        }
+
+        guard agentNotificationsEnabled else { return }
+        let label = name ?? "Terminal"
+        showNotification(title: title ?? "\(label) needs input", body: body ?? "")
+    }
+
+    private func showNotification(title: String, body: String) {
         let content = UNMutableNotificationContent()
-        content.title = "Client Connected"
-        content.body = "\(clientIP) connected to your Mac"
+        content.title = title
+        if !body.isEmpty { content.body = body }
         content.sound = .default
 
         let request = UNNotificationRequest(
@@ -695,6 +736,27 @@ class ConnectionManager: ObservableObject {
             if let error = error {
                 dlog("Notification error: \(error)")
             }
+        }
+    }
+
+    // MARK: - Composer Drafts (per session, persisted)
+    //
+    // The key is owned here (not in the view) so the session lifecycle handlers
+    // above can migrate a draft on rename and clear it on kill/exit — otherwise
+    // a reused session name could revive an old, possibly sensitive prompt.
+
+    private func draftKey(_ session: String) -> String { "composerDraft.\(session)" }
+
+    func loadDraft(for session: String) -> String {
+        UserDefaults.standard.string(forKey: draftKey(session)) ?? ""
+    }
+
+    func saveDraft(_ text: String, for session: String) {
+        let key = draftKey(session)
+        if text.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(text, forKey: key)
         }
     }
 }
