@@ -51,7 +51,8 @@ struct PortChipsBar: View {
                         HStack(spacing: 4) {
                             Image(systemName: "safari")
                                 .font(.system(size: 11, weight: .semibold))
-                            Text(":\(port)")
+                            // verbatim so the port isn't localized (":3 000")
+                            Text(verbatim: ":\(port)")
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                         }
                         .foregroundStyle(Color.brandOrange)
