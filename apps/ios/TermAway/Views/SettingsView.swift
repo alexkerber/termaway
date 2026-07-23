@@ -98,10 +98,14 @@ struct SettingsView: View {
                         get: { connectionManager.connectionNotificationsEnabled },
                         set: { connectionManager.connectionNotificationsEnabled = $0 }
                     ))
+                    Toggle("Agent Alerts", isOn: Binding(
+                        get: { connectionManager.agentNotificationsEnabled },
+                        set: { connectionManager.agentNotificationsEnabled = $0 }
+                    ))
                 } header: {
                     Text("Notifications")
                 } footer: {
-                    Text("Get notified when someone connects to your Mac. Also appears on Apple Watch.")
+                    Text("Connection Alerts fire when someone connects to your Mac. Agent Alerts fire when a session rings the bell or a coding agent finishes. Both also appear on Apple Watch.")
                 }
 
                 // Connection Info Section

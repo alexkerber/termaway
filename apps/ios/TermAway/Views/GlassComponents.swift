@@ -136,39 +136,13 @@ struct GlassRoundedButton: View {
     }
 }
 
-// MARK: - Connection Status Pill
-/// Shows connection status with green dot and "Connected" text
-struct ConnectionStatusPill: View {
+// MARK: - Connection Status Label
+/// Green dot + "Connected"/"Disconnected" text. Wrap in a Button where a tap
+/// action (e.g. show sessions) is wanted.
+struct ConnectionStatusLabel: View {
     var isConnected: Bool = true
-    var lightMode: Bool = false
-    var action: (() -> Void)? = nil
 
     var body: some View {
-        if let action = action {
-            GlassPillButton(lightMode: lightMode, action: action) {
-                statusContent
-            }
-        } else {
-            statusContent
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background {
-                    if #available(iOS 26.0, *) {
-                        ZStack {
-                            if lightMode {
-                                Capsule().fill(Color(.systemBackground))
-                            }
-                            Capsule().fill(.clear).glassEffect()
-                        }
-                    } else {
-                        Capsule().fill(.ultraThinMaterial)
-                            .environment(\.colorScheme, lightMode ? .light : .dark)
-                    }
-                }
-        }
-    }
-
-    private var statusContent: some View {
         HStack(spacing: 6) {
             Image(systemName: "circle.fill")
                 .font(.system(size: 8))
@@ -176,8 +150,10 @@ struct ConnectionStatusPill: View {
                 .symbolEffect(.pulse, isActive: isConnected)
             Text(isConnected ? "Connected" : "Disconnected")
                 .font(.subheadline.weight(.medium))
+                .foregroundStyle(isConnected ? Color.green : Color.red)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
-        .foregroundColor(isConnected ? .green : .red)
     }
 }
 
@@ -267,8 +243,8 @@ struct GlassPillModifier: ViewModifier {
                 GlassCircleButton(icon: "arrow.down.to.line", size: 44, action: {})
             }
 
-            // Pill buttons
-            ConnectionStatusPill(action: {})
+            // Status label
+            ConnectionStatusLabel()
 
             // Settings button
             GlassSettingsButton(action: {})

@@ -230,6 +230,14 @@ struct SessionRowView: View {
 
             Spacer()
 
+            if session.needsAttention && !isActive {
+                Image(systemName: "bell.badge.fill")
+                    .foregroundColor(.brandOrange)
+                    .font(.title3)
+                    .symbolEffect(.pulse)
+                    .accessibilityLabel("Needs input")
+            }
+
             if isActive && !isEditMode {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.brandOrange)
@@ -380,55 +388,59 @@ struct TerminalDetailView: View {
                             )
                             .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
                         } else {
-                            // + button in glass circle (new session)
-                            GlassCircleButton(
-                                icon: "plus",
-                                color: iconColor,
-                                lightMode: themeManager.isChromeLightMode,
-                                action: { showingNewSession = true }
-                            )
+                            // Left section (equal width so the center label is
+                            // screen-centered): + and session name
+                            HStack(spacing: 10) {
+                                GlassCircleButton(
+                                    icon: "plus",
+                                    color: iconColor,
+                                    lightMode: themeManager.isChromeLightMode,
+                                    action: { showingNewSession = true }
+                                )
+                                Button(action: { showingSessionList = true }) {
+                                    Text(splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "")
+                                        .font(.headline)
+                                        .foregroundColor(iconColor)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                                .buttonStyle(.plain)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Session name (tappable to show session list)
+                            // Center: connection status as a plain label
                             Button(action: { showingSessionList = true }) {
-                                Text(splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "")
-                                    .font(.headline)
-                                    .foregroundColor(iconColor)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
+                                ConnectionStatusLabel(isConnected: connectionManager.isConnected)
                             }
                             .buttonStyle(.plain)
-                            .frame(maxWidth: 150, alignment: .leading)
+                            .layoutPriority(1)
 
-                            Spacer()
-
-                            // Search button
-                            GlassCircleButton(
-                                icon: "magnifyingglass",
-                                color: iconColor,
-                                lightMode: themeManager.isChromeLightMode,
-                                action: {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                        showSearch = true
+                            // Right section (equal width): split, search, settings
+                            HStack(spacing: 10) {
+                                Spacer(minLength: 0)
+                                SplitPaneMenuButton(iconColor: iconColor, lightMode: themeManager.isChromeLightMode)
+                                GlassCircleButton(
+                                    icon: "magnifyingglass",
+                                    color: iconColor,
+                                    lightMode: themeManager.isChromeLightMode,
+                                    action: {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                            showSearch = true
+                                        }
+                                        let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
+                                        let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
+                                        searchManager.updateSearchableText(from: buffer)
                                     }
-                                    let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
-                                    let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
-                                    searchManager.updateSearchableText(from: buffer)
-                                }
-                            )
-
-                            // Split pane button (iPad only)
-                            SplitPaneMenuButton(iconColor: iconColor, lightMode: themeManager.isChromeLightMode)
-
-                            // Connected status pill (tappable to show sessions)
-                            ConnectionStatusPill(lightMode: themeManager.isChromeLightMode, action: { showingSessionList = true })
-
-                            // Gear icon in glass circle (settings)
-                            GlassCircleButton(
-                                icon: "gearshape.fill",
-                                color: iconColor,
-                                lightMode: themeManager.isChromeLightMode,
-                                action: { showingSettings = true }
-                            )
+                                )
+                                GlassCircleButton(
+                                    icon: "gearshape.fill",
+                                    color: iconColor,
+                                    lightMode: themeManager.isChromeLightMode,
+                                    action: { showingSettings = true }
+                                )
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -672,51 +684,57 @@ struct SessionCompactView: View {
                             )
                             .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
                         } else {
-                            // + button in glass circle (new session)
-                            GlassCircleButton(
-                                icon: "plus",
-                                color: iconColor,
-                                lightMode: themeManager.isChromeLightMode,
-                                action: { showingNewSession = true }
-                            )
+                            // Left section (equal width so the center label is
+                            // screen-centered): + and session name
+                            HStack(spacing: 10) {
+                                GlassCircleButton(
+                                    icon: "plus",
+                                    color: iconColor,
+                                    lightMode: themeManager.isChromeLightMode,
+                                    action: { showingNewSession = true }
+                                )
+                                Button(action: { showingSessionList = true }) {
+                                    Text(currentSession.name)
+                                        .font(.headline)
+                                        .foregroundColor(iconColor)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                                .buttonStyle(.plain)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Session name (tappable to show session list)
+                            // Center: connection status as a plain label
                             Button(action: { showingSessionList = true }) {
-                                Text(currentSession.name)
-                                    .font(.headline)
-                                    .foregroundColor(iconColor)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
+                                ConnectionStatusLabel(isConnected: connectionManager.isConnected)
                             }
                             .buttonStyle(.plain)
-                            .frame(maxWidth: 150, alignment: .leading)
+                            .layoutPriority(1)
 
-                            Spacer()
-
-                            // Search button
-                            GlassCircleButton(
-                                icon: "magnifyingglass",
-                                color: iconColor,
-                                lightMode: themeManager.isChromeLightMode,
-                                action: {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                        showSearch = true
+                            // Right section (equal width): search + settings
+                            HStack(spacing: 10) {
+                                Spacer(minLength: 0)
+                                GlassCircleButton(
+                                    icon: "magnifyingglass",
+                                    color: iconColor,
+                                    lightMode: themeManager.isChromeLightMode,
+                                    action: {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                            showSearch = true
+                                        }
+                                        let buffer = connectionManager.getSessionOutputBuffer(for: currentSession.name)
+                                        searchManager.updateSearchableText(from: buffer)
                                     }
-                                    let buffer = connectionManager.getSessionOutputBuffer(for: currentSession.name)
-                                    searchManager.updateSearchableText(from: buffer)
-                                }
-                            )
-
-                            // Connected status pill (tappable to show sessions)
-                            ConnectionStatusPill(lightMode: themeManager.isChromeLightMode, action: { showingSessionList = true })
-
-                            // Gear icon in glass circle (settings)
-                            GlassCircleButton(
-                                icon: "gearshape.fill",
-                                color: iconColor,
-                                lightMode: themeManager.isChromeLightMode,
-                                action: { showingSettings = true }
-                            )
+                                )
+                                GlassCircleButton(
+                                    icon: "gearshape.fill",
+                                    color: iconColor,
+                                    lightMode: themeManager.isChromeLightMode,
+                                    action: { showingSettings = true }
+                                )
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
                     .padding(.horizontal, 16)

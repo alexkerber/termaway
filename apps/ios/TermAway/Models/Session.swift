@@ -5,11 +5,14 @@ struct Session: Identifiable, Codable, Equatable {
     let name: String
     let clientCount: Int
     let createdAt: Date?
+    /// Server flagged this session as needing the user (agent bell or hook).
+    let needsAttention: Bool
 
-    init(name: String, clientCount: Int = 0, createdAt: Date? = nil) {
+    init(name: String, clientCount: Int = 0, createdAt: Date? = nil, needsAttention: Bool = false) {
         self.name = name
         self.clientCount = clientCount
         self.createdAt = createdAt
+        self.needsAttention = needsAttention
     }
 }
 
@@ -38,7 +41,8 @@ enum ServerMessage {
                 let sessions = list.compactMap { item -> Session? in
                     guard let name = item["name"] as? String else { return nil }
                     let clientCount = item["clientCount"] as? Int ?? 0
-                    return Session(name: name, clientCount: clientCount)
+                    let needsAttention = item["needsAttention"] as? Bool ?? false
+                    return Session(name: name, clientCount: clientCount, needsAttention: needsAttention)
                 }
                 self = .sessions(sessions)
             } else {

@@ -113,7 +113,7 @@ xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
 
 - `GlassCircleButton` - Circle button with liquid glass effect (iOS 26) or ultraThinMaterial fallback. Use for floating action buttons, icon buttons in overlays. Has built-in haptic feedback.
 - `GlassPillButton` - Pill-shaped glass button for status indicators
-- `ConnectionStatusPill` - Shows connected/disconnected status
+- `ConnectionStatusLabel` - Green dot + connected/disconnected text (wrap in a Button for a tap action)
 
 Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
 
