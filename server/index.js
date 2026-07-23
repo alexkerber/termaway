@@ -8,6 +8,7 @@ import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
 import { Bonjour } from "bonjour-service";
+import { execFile } from "child_process";
 import SessionManager from "./sessionManager.js";
 
 // Timing-safe password comparison to prevent timing attacks
@@ -85,6 +86,7 @@ function getSessionList() {
       clientCount: info.clientCount,
       createdAt: info.createdAt,
       needsAttention: info.needsAttention,
+      ports: info.ports,
       isTmux: info.isTmux,
       isConnected: info.isConnected,
     };
@@ -999,6 +1001,122 @@ function broadcastSessionList() {
   broadcastAll({ type: "sessions", list: getSessionList() });
 }
 
+// ---------------------------------------------------------------------------
+// Listening-port discovery (for dev-server previews)
+// ---------------------------------------------------------------------------
+
+const PORT_SCAN_INTERVAL = 4000;
+let portScanInterval = null;
+let portScanBusy = false;
+
+/**
+ * Map off-box-reachable listening TCP ports to each session's process tree and
+ * broadcast the session list when they change. Loopback-only ports (bound to
+ * 127.0.0.0/8 or ::1) are skipped — they aren't reachable from other devices.
+ */
+function scanListeningPorts() {
+  if (portScanBusy) return; // don't overlap a slow scan
+  // Nothing to map, or nobody watching — skip the subprocess spawn entirely.
+  if (sessionManager.sessions.size === 0) return;
+  if (getConnectedClientCount() === 0) return;
+  portScanBusy = true;
+
+  execFile(
+    "lsof",
+    ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"],
+    { timeout: 3000 },
+    (lsofErr, lsofOut) => {
+      // lsof exits 1 with empty output when nothing is listening — a valid
+      // empty snapshot, not a failure. Only bail on spawn/timeout/signal
+      // errors (missing binary, killed), which mustn't wipe known ports.
+      if (lsofErr && lsofErr.code !== 1) {
+        portScanBusy = false;
+        return;
+      }
+
+      // pid -> Set(port), reachable ports only
+      const portsByPid = new Map();
+      let curPid = null;
+      for (const line of lsofOut.split("\n")) {
+        if (line[0] === "p") {
+          curPid = parseInt(line.slice(1), 10);
+        } else if (line[0] === "n" && curPid) {
+          const name = line.slice(1); // addr:port
+          const colon = name.lastIndexOf(":");
+          if (colon < 0) continue;
+          const addr = name.slice(0, colon);
+          const port = parseInt(name.slice(colon + 1), 10);
+          if (!port) continue;
+          // Only wildcard binds (0.0.0.0 / ::, shown by `lsof -n` as "*") are
+          // reachable via whatever host the client used to reach us. Loopback
+          // and interface-specific binds (e.g. 192.168.x) are dropped — they
+          // may not resolve from the client's host (LAN vs Tailscale).
+          if (
+            addr !== "*" &&
+            addr !== "0.0.0.0" &&
+            addr !== "[::]" &&
+            addr !== "::"
+          ) {
+            continue;
+          }
+          if (!portsByPid.has(curPid)) portsByPid.set(curPid, new Set());
+          portsByPid.get(curPid).add(port);
+        }
+      }
+
+      execFile(
+        "ps",
+        ["-axo", "pid=,ppid="],
+        { timeout: 3000 },
+        (psErr, psOut) => {
+          portScanBusy = false;
+          if (psErr) return;
+
+          // ppid -> [child pids]
+          const children = new Map();
+          for (const line of psOut.split("\n")) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parseInt(parts[0], 10);
+            const ppid = parseInt(parts[1], 10);
+            if (!pid) continue;
+            if (!children.has(ppid)) children.set(ppid, []);
+            children.get(ppid).push(pid);
+          }
+
+          let changed = false;
+          for (const session of sessionManager.sessions.values()) {
+            const root = session.pty?.pid;
+            if (!root) continue;
+            // Walk the pty's whole process subtree collecting listening ports.
+            const ports = new Set();
+            const stack = [root];
+            const seen = new Set();
+            while (stack.length) {
+              const pid = stack.pop();
+              if (seen.has(pid)) continue;
+              seen.add(pid);
+              const found = portsByPid.get(pid);
+              if (found) for (const p of found) ports.add(p);
+              const kids = children.get(pid);
+              if (kids) for (const k of kids) stack.push(k);
+            }
+            const sorted = [...ports].sort((a, b) => a - b);
+            const prev = session.ports;
+            if (
+              sorted.length !== prev.length ||
+              sorted.some((p, i) => p !== prev[i])
+            ) {
+              session.ports = sorted;
+              changed = true;
+            }
+          }
+          if (changed) broadcastSessionList();
+        },
+      );
+    },
+  );
+}
+
 // Initialize Bonjour/mDNS
 const bonjour = new Bonjour();
 let bonjourService = null;
@@ -1055,6 +1173,10 @@ server.listen(PORT, HOST, () => {
   console.log("         Discoverable on local network");
   console.log("");
   console.log("Press Ctrl+C to stop the server");
+
+  // Begin scanning for dev-server ports to surface in the session list.
+  scanListeningPorts();
+  portScanInterval = setInterval(scanListeningPorts, PORT_SCAN_INTERVAL);
 });
 
 // Graceful shutdown
@@ -1063,6 +1185,7 @@ function shutdown() {
 
   // Stop heartbeat
   clearInterval(heartbeatInterval);
+  if (portScanInterval) clearInterval(portScanInterval);
 
   // Unpublish Bonjour service
   if (bonjourService) {

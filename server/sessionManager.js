@@ -42,6 +42,10 @@ class Session {
     // "Agent needs you" flag: set by a terminal bell or an explicit hook,
     // cleared when the user interacts with the session. Rides the session list.
     this.needsAttention = false;
+    // Listening TCP ports in this session's process tree that are reachable
+    // off-box (bound to 0.0.0.0/* or a real interface, not loopback). Populated
+    // by the periodic scan in index.js so clients can offer preview links.
+    this.ports = [];
   }
 
   // Store output in scrollback buffer
@@ -410,6 +414,7 @@ class SessionManager {
       createdAt: session.createdAt,
       scrollbackLength: session.scrollback.length,
       needsAttention: session.needsAttention,
+      ports: session.ports,
       isTmux: false,
       isConnected: true,
     };

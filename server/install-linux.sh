@@ -46,6 +46,16 @@ if ! command -v make &> /dev/null || ! command -v gcc &> /dev/null; then
   fi
 fi
 
+# lsof is used to surface dev-server ports in the session list. Optional — the
+# server runs fine without it, the port-preview feature just stays empty.
+if ! command -v lsof &> /dev/null; then
+  echo ""
+  echo "Note: 'lsof' not found — dev-server port previews will be unavailable."
+  echo "  Ubuntu/Debian: sudo apt-get install -y lsof"
+  echo "  Fedora/RHEL:   sudo dnf install -y lsof"
+  echo ""
+fi
+
 # Determine script directory (where the tarball was extracted)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
