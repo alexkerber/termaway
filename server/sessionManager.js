@@ -39,6 +39,9 @@ class Session {
     this.clientSizes = new WeakMap();
     // Ephemeral sessions don't show in the session list (used for split panes)
     this.ephemeral = ephemeral;
+    // "Agent needs you" flag: set by a terminal bell or an explicit hook,
+    // cleared when the user interacts with the session. Rides the session list.
+    this.needsAttention = false;
   }
 
   // Store output in scrollback buffer
@@ -86,6 +89,7 @@ class SessionManager {
   constructor() {
     this.sessions = new Map();
     this.clipboard = "";
+    // onAttentionChange is set by index.js to fan out attention changes.
     debug("Session manager ready (PTY mode)");
   }
 
@@ -297,6 +301,34 @@ class SessionManager {
       throw new Error(`Session "${name}" not found`);
     }
     session.pty.write(data);
+    // User is interacting with this session — it no longer needs attention.
+    if (session.needsAttention) this.clearAttention(name);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Attention (agent needs you)
+  // ---------------------------------------------------------------------------
+
+  // Flag a session as needing attention. `source` is "bell" (passive, detected
+  // in PTY output) or "notify" (explicit agent hook). `changed` tells the
+  // listener whether this was a false->true transition (so the badge/list only
+  // re-broadcasts on real changes, while explicit notifies always fire).
+  markAttention(name, { source = "bell", title, body } = {}) {
+    const session = this.sessions.get(name);
+    if (!session) return;
+    // Note: ephemeral split-pane sessions are excluded from list() so they
+    // never show a badge, but they still raise the event here so an agent
+    // running in a pane can alert.
+    const changed = !session.needsAttention;
+    session.needsAttention = true;
+    this.onAttentionChange?.(session, { source, title, body, changed });
+  }
+
+  clearAttention(name) {
+    const session = this.sessions.get(name);
+    if (!session || !session.needsAttention) return;
+    session.needsAttention = false;
+    this.onAttentionChange?.(session, { source: "clear", changed: true });
   }
 
   resize(name, cols, rows, ws = null) {
@@ -377,6 +409,7 @@ class SessionManager {
       clientCount: session.clients.size,
       createdAt: session.createdAt,
       scrollbackLength: session.scrollback.length,
+      needsAttention: session.needsAttention,
       isTmux: false,
       isConnected: true,
     };
@@ -401,6 +434,12 @@ class SessionManager {
   _setupHandlers(session) {
     session.pty.onData((data) => {
       session.pushScrollback(data);
+      // Passive attention: a terminal bell (BEL, \x07) means "look at me".
+      // Claude Code, Codex, OpenCode and most CLIs ring it on notifications,
+      // permission prompts and task completion — zero config, any tool.
+      if (data.includes("\x07")) {
+        this.markAttention(session.name, { source: "bell" });
+      }
       // Include session name so clients can route to correct pane
       const msg = { type: "output", name: session.name, data };
       debug(`Broadcasting output for "${session.name}": ${data.length} chars`);
