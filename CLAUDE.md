@@ -32,7 +32,7 @@ termaway/
 │   │   ├── pages/        # index, policy
 │   │   └── styles/       # Global CSS
 │   └── public/assets/    # Images, icons
-├── builds/           # Build outputs (.app, .zip)
+├── builds/           # Release artifacts (.dmg, .tar.gz)
 └── docs/             # Documentation
 ```
 
@@ -129,12 +129,27 @@ Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
 
 When creating a new release:
 
-1. **Bump the version in both apps (keep them in sync):**
+1. **Bump the version, then commit and push to main before tagging** (`gh release create`
+   tags the remote HEAD, so an unpushed bump ships the previous commit):
    - `apps/macos/TermAway/Info.plist` - CFBundleShortVersionString and CFBundleVersion
    - `apps/ios/TermAway.xcodeproj/project.pbxproj` - MARKETING_VERSION and CURRENT_PROJECT_VERSION
-   - The website reads version and download URL from the GitHub releases API
+     (both appear twice, Debug and Release; bump in the Xcode target settings to hit both)
 
-2. **Build the macOS app — use the script, do not hand-roll it:**
+   Only the marketing versions need to match across the apps
+   (CFBundleShortVersionString ↔ MARKETING_VERSION). Build numbers are independent and
+   only have to increase — macOS reuses the marketing version, iOS counts 1, 2, 3.
+
+2. **Build and upload the iOS app:**
+
+   ```bash
+   apps/ios/release.sh                                          # archive + export IPA
+   apps/ios/release.sh --upload --api-key <KEY_ID> --api-issuer <ISSUER_ID>
+   ```
+
+   Without `--upload`, finish in Xcode: Organizer → Distribute App → App Store Connect.
+   Either way, select the build in App Store Connect and submit it for review.
+
+3. **Build the macOS app — use the script, do not hand-roll it:**
 
    ```bash
    apps/macos/release.sh              # --no-notarize for a test build
@@ -143,13 +158,13 @@ When creating a new release:
    It reads the version from Info.plist, archives with Developer ID, bundles the Node
    server + web client + production deps inside the app, signs every Mach-O (node-pty
    ships `pty.node` and `spawn-helper`), notarizes, staples, and writes
-   `builds/TermAway-macOS-v{version}.dmg` (~9 MB).
+   `builds/TermAway-macOS-v{version}.dmg`.
 
    Ship the DMG, never a zip. Extraction tools can break the signature of a zipped
    `.app`, and a hand-built zip omits the bundled server — if the artifact is under a
    megabyte, the server is missing and the app is broken.
 
-3. **Build Linux server package:**
+4. **Build Linux server package:**
 
    ```bash
    # Create tarball from repo root
@@ -164,23 +179,22 @@ When creating a new release:
    rm -rf /tmp/termaway-linux
    ```
 
-4. **Publish the GitHub release:**
+5. **Publish the GitHub release:**
 
    ```bash
    gh release create v{version} --draft \
      builds/TermAway-macOS-v{version}.dmg \
      builds/TermAway-Linux-v{version}.tar.gz
 
-   gh release edit v{version} --draft=false   # once App Store review clears
+   gh release edit v{version} --draft=false   # once the App Store build is live
    ```
 
-   Keep it a draft until the iOS build is approved, so the website never advertises a
-   version the App Store does not have yet. Asset names must contain `macOS` / `Linux`
-   and there must be exactly one of each — the website picks them with
-   `assets.find(a => a.name.includes('macOS'))`, so a leftover extra macOS asset can
-   win over the DMG.
-
-Website deploys automatically via Vercel on push to main.
+   Keep it a draft until the iOS version is actually live — approved is not enough if
+   the release is manual — so the Mac and Linux downloads never run ahead of the App
+   Store. The website's download buttons resolve from the latest _published_ release
+   and match assets by name, `assets.find(a => a.name.includes('macOS'))`, so there
+   must be exactly one macOS asset and one Linux asset or a leftover can win over the
+   DMG.
 
 ### Notarization Setup (one-time)
 
