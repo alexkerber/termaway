@@ -129,40 +129,27 @@ Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
 
 When creating a new release:
 
-1. **Version location to update:**
+1. **Bump the version in both apps (keep them in sync):**
    - `apps/macos/TermAway/Info.plist` - CFBundleShortVersionString and CFBundleVersion
-   - Website auto-fetches version from GitHub releases API
+   - `apps/ios/TermAway.xcodeproj/project.pbxproj` - MARKETING_VERSION and CURRENT_PROJECT_VERSION
+   - The website reads version and download URL from the GitHub releases API
 
-2. **Asset naming convention (IMPORTANT):**
-   - macOS zip: `TermAway-macOS-v{version}.zip` (e.g., `TermAway-macOS-v1.1.2.zip`)
-   - Linux tarball: `TermAway-Linux-v{version}.tar.gz` (e.g., `TermAway-Linux-v1.2.0.tar.gz`)
-   - Save to: `builds/`
-
-3. **Build and notarize macOS app:**
+2. **Build the macOS app — use the script, do not hand-roll it:**
 
    ```bash
-   # Build archive
-   cd apps/macos && xcodebuild -scheme TermAway -configuration Release \
-     -archivePath /tmp/TermAway.xcarchive archive
-
-   # Copy app from archive
-   cp -R /tmp/TermAway.xcarchive/Products/Applications/TermAway.app /tmp/
-
-   # Create zip for notarization
-   cd /tmp && zip -r TermAway-notarize.zip TermAway.app
-
-   # Submit for notarization (uses stored keychain credentials)
-   xcrun notarytool submit TermAway-notarize.zip --keychain-profile "notarytool" --wait
-
-   # Staple the notarization ticket
-   xcrun stapler staple /tmp/TermAway.app
-
-   # Create final zip
-   cd /tmp && zip -r TermAway-macOS-v{version}.zip TermAway.app
-   mv TermAway-macOS-v{version}.zip /path/to/termaway/builds/
+   apps/macos/release.sh              # --no-notarize for a test build
    ```
 
-4. **Build Linux server package:**
+   It reads the version from Info.plist, archives with Developer ID, bundles the Node
+   server + web client + production deps inside the app, signs every Mach-O (node-pty
+   ships `pty.node` and `spawn-helper`), notarizes, staples, and writes
+   `builds/TermAway-macOS-v{version}.dmg` (~9 MB).
+
+   Ship the DMG, never a zip. Extraction tools can break the signature of a zipped
+   `.app`, and a hand-built zip omits the bundled server — if the artifact is under a
+   megabyte, the server is missing and the app is broken.
+
+3. **Build Linux server package:**
 
    ```bash
    # Create tarball from repo root
@@ -177,13 +164,21 @@ When creating a new release:
    rm -rf /tmp/termaway-linux
    ```
 
-5. **Create GitHub release:**
+4. **Publish the GitHub release:**
 
    ```bash
-   gh release create v{version} \
-     builds/TermAway-macOS-v{version}.zip \
+   gh release create v{version} --draft \
+     builds/TermAway-macOS-v{version}.dmg \
      builds/TermAway-Linux-v{version}.tar.gz
+
+   gh release edit v{version} --draft=false   # once App Store review clears
    ```
+
+   Keep it a draft until the iOS build is approved, so the website never advertises a
+   version the App Store does not have yet. Asset names must contain `macOS` / `Linux`
+   and there must be exactly one of each — the website picks them with
+   `assets.find(a => a.name.includes('macOS'))`, so a leftover extra macOS asset can
+   win over the DMG.
 
 Website deploys automatically via Vercel on push to main.
 
