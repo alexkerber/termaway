@@ -32,8 +32,7 @@ termaway/
 │   │   ├── pages/        # index, policy
 │   │   └── styles/       # Global CSS
 │   └── public/assets/    # Images, icons
-├── builds/           # Release artifacts (.dmg, .tar.gz)
-└── docs/             # Documentation
+└── builds/           # Release artifacts (.dmg, .tar.gz)
 ```
 
 ## Architecture
