@@ -215,22 +215,26 @@ struct SessionSidebarView: View {
                     )
             }
         }
+        .navigationTitle("Sessions")
         .toolbar {
+            // The button gets its own item so iOS sizes the Liquid Glass background
+            // around the button alone. Putting it in an HStack with the title made
+            // one background span both, which left the "+" 4pt off-centre in its
+            // own circle. ToolbarSpacer is the supported way to keep custom items
+            // in their own glass group.
             ToolbarItem(placement: .navigationBarLeading) {
-                HStack(spacing: 10) {
-                    Button {
-                        showingNewSession = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-
-                    Text("Windows")
-                        .font(.headline)
+                Button {
+                    showingNewSession = true
+                } label: {
+                    Image(systemName: "plus")
                 }
             }
+            if #available(iOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .navigationBarLeading)
+            }
         }
-        .alert("New Window", isPresented: $showingNewSession) {
-            TextField("Window name", text: $newSessionName)
+        .alert("New Session", isPresented: $showingNewSession) {
+            TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
@@ -380,7 +384,7 @@ struct SessionRowView: View {
                 }
             }
         }
-        .alert("Rename Window", isPresented: $showingRenameAlert) {
+        .alert("Rename Session", isPresented: $showingRenameAlert) {
             TextField("New name", text: $newName)
             Button("Cancel", role: .cancel) {
                 newName = ""
@@ -392,7 +396,7 @@ struct SessionRowView: View {
                 newName = ""
             }
         }
-        .alert("Delete Window?", isPresented: $showingDeleteConfirmation) {
+        .alert("Delete Session?", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
                 connectionManager.killSession(session.name)
@@ -576,8 +580,8 @@ struct TerminalDetailView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
-        .alert("New Window", isPresented: $showingNewSession) {
-            TextField("Window name", text: $newSessionName)
+        .alert("New Session", isPresented: $showingNewSession) {
+            TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
@@ -613,7 +617,7 @@ struct TerminalDetailView: View {
                 }
             }
         }
-        .alert("Close Window?", isPresented: $showingKillConfirmation) {
+        .alert("Close Session?", isPresented: $showingKillConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Close", role: .destructive) {
                 if let name = connectionManager.currentSession?.name {
@@ -689,7 +693,7 @@ struct SplitPaneMenuButton: View {
         let newPanesNeeded = max(0, neededPaneCount - currentPaneCount)
 
         // Get base session name for generating new session names
-        let baseSessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "Window"
+        let baseSessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "Session"
 
         // Create new sessions for additional panes (using dash instead of parens for server compatibility)
         var newSessionNames: [String] = []
@@ -892,8 +896,8 @@ struct SessionCompactView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
-        .alert("New Window", isPresented: $showingNewSession) {
-            TextField("Window name", text: $newSessionName)
+        .alert("New Session", isPresented: $showingNewSession) {
+            TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
                 newSessionName = ""
             }
@@ -919,7 +923,7 @@ struct SessionCompactView: View {
                 connectionManager.attachToSession(first.name)
             }
         }
-        .alert("Close Window?", isPresented: $showingKillConfirmation) {
+        .alert("Close Session?", isPresented: $showingKillConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Close", role: .destructive) {
                 if let name = connectionManager.currentSession?.name {
@@ -1271,7 +1275,7 @@ struct NoSessionView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "plus")
                         .font(.body.weight(.semibold))
-                    Text("Create Window")
+                    Text("Create Session")
                         .font(.body.weight(.semibold))
                 }
                 .padding(.horizontal, 32)
