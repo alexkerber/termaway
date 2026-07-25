@@ -8,7 +8,7 @@ import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
 import { Bonjour } from "bonjour-service";
-import { execFile } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import SessionManager from "./sessionManager.js";
 
 // Timing-safe password comparison to prevent timing attacks
@@ -117,7 +117,28 @@ const cliArgs = parseArgs();
 // Configuration
 const PORT = cliArgs.port || process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVICE_NAME = process.env.SERVICE_NAME || `TermAway (${os.hostname()})`;
+// os.hostname() on macOS is LocalHostName, which gains a "-NNN" suffix every
+// time mDNS sees a name conflict. Baking it into the Bonjour service name gives
+// the same Mac a brand-new identity after each bump, so a client's discovery
+// list fills up with stale copies of one machine. ComputerName is the stable,
+// user-facing name.
+function machineName() {
+  if (process.platform === "darwin") {
+    try {
+      const name = execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], {
+        encoding: "utf8",
+        timeout: 2000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (name) return name;
+    } catch {
+      // Fall back to the hostname below.
+    }
+  }
+  return os.hostname().replace(/\.local$/, "");
+}
+
+const SERVICE_NAME = process.env.SERVICE_NAME || `TermAway (${machineName()})`;
 const PASSWORD = cliArgs.password || process.env.TERMAWAY_PASSWORD || null;
 
 // TLS certificate paths
