@@ -338,8 +338,15 @@ class ConnectionManager: ObservableObject {
 
         isConnecting = true
 
-        // Clear stale session data - server will send fresh list
-        sessions = []
+        // The output buffers have to go: on reattach the server replays the
+        // whole scrollback, and output appends, so keeping them would duplicate
+        // everything on screen.
+        //
+        // The session *list* stays. Blanking it here showed "No sessions yet"
+        // in the gap before the fresh list arrived, so a client reconnecting on
+        // a flaky network made the view jump once per attempt. The list is
+        // replaced wholesale when the server sends it, so nothing stale
+        // survives — it just isn't blanked first.
         sessionStates.removeAll()
         activeSessionName = nil
 
@@ -726,8 +733,18 @@ class ConnectionManager: ObservableObject {
         }
     }
 
+    private var lastConnectionNoticeAt: [String: Date] = [:]
+
     private func showConnectionNotification(clientIP: String) {
         guard connectionNotificationsEnabled else { return }
+        // One client reconnecting in a loop shouldn't be able to post a
+        // notification a second. Once per address per minute is enough to tell
+        // you someone joined.
+        let now = Date()
+        if let last = lastConnectionNoticeAt[clientIP], now.timeIntervalSince(last) < 60 {
+            return
+        }
+        lastConnectionNoticeAt[clientIP] = now
         showNotification(title: "Client Connected", body: "\(clientIP) connected to your Mac")
     }
 
