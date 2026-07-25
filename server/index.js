@@ -138,7 +138,15 @@ function machineName() {
   return os.hostname().replace(/\.local$/, "");
 }
 
-const SERVICE_NAME = process.env.SERVICE_NAME || `TermAway (${machineName()})`;
+// The port disambiguates a second instance on the same machine. Bonjour
+// rejects a duplicate service name outright rather than renaming, and now that
+// the machine name is stable there is nothing else to tell two servers apart —
+// before, a churning hostname hid the collision by accident.
+const SERVICE_NAME =
+  process.env.SERVICE_NAME ||
+  (String(PORT) === "3000"
+    ? `TermAway (${machineName()})`
+    : `TermAway (${machineName()}:${PORT})`);
 const PASSWORD = cliArgs.password || process.env.TERMAWAY_PASSWORD || null;
 
 // TLS certificate paths
@@ -1188,6 +1196,13 @@ server.listen(PORT, HOST, () => {
       tls: tlsOptions ? "true" : "false",
       auth: PASSWORD ? "required" : "none",
     },
+  });
+
+  // Discovery is a convenience — clients can always be pointed at an address by
+  // hand. A name clash or a flaky network must not take the terminal down with
+  // it, and this event is fatal if nobody listens for it.
+  bonjourService.on("error", (err) => {
+    console.error(`Bonjour: not advertising (${err.message})`);
   });
 
   console.log(`Bonjour: Published as "${SERVICE_NAME}" (_http._tcp)`);
