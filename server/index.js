@@ -8,7 +8,7 @@ import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
 import { Bonjour } from "bonjour-service";
-import { execFile } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import SessionManager from "./sessionManager.js";
 
 // Timing-safe password comparison to prevent timing attacks
@@ -117,7 +117,36 @@ const cliArgs = parseArgs();
 // Configuration
 const PORT = cliArgs.port || process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
-const SERVICE_NAME = process.env.SERVICE_NAME || `TermAway (${os.hostname()})`;
+// os.hostname() on macOS is LocalHostName, which gains a "-NNN" suffix every
+// time mDNS sees a name conflict. Baking it into the Bonjour service name gives
+// the same Mac a brand-new identity after each bump, so a client's discovery
+// list fills up with stale copies of one machine. ComputerName is the stable,
+// user-facing name.
+function machineName() {
+  if (process.platform === "darwin") {
+    try {
+      const name = execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], {
+        encoding: "utf8",
+        timeout: 2000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (name) return name;
+    } catch {
+      // Fall back to the hostname below.
+    }
+  }
+  return os.hostname().replace(/\.local$/, "");
+}
+
+// The port disambiguates a second instance on the same machine. Bonjour
+// rejects a duplicate service name outright rather than renaming, and now that
+// the machine name is stable there is nothing else to tell two servers apart —
+// before, a churning hostname hid the collision by accident.
+const SERVICE_NAME =
+  process.env.SERVICE_NAME ||
+  (String(PORT) === "3000"
+    ? `TermAway (${machineName()})`
+    : `TermAway (${machineName()}:${PORT})`);
 const PASSWORD = cliArgs.password || process.env.TERMAWAY_PASSWORD || null;
 
 // TLS certificate paths
@@ -1236,6 +1265,13 @@ server.listen(PORT, HOST, () => {
       tls: tlsOptions ? "true" : "false",
       auth: PASSWORD ? "required" : "none",
     },
+  });
+
+  // Discovery is a convenience — clients can always be pointed at an address by
+  // hand. A name clash or a flaky network must not take the terminal down with
+  // it, and this event is fatal if nobody listens for it.
+  bonjourService.on("error", (err) => {
+    console.error(`Bonjour: not advertising (${err.message})`);
   });
 
   console.log(`Bonjour: Published as "${SERVICE_NAME}" (_http._tcp)`);
