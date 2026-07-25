@@ -1040,25 +1040,32 @@ function getPortScanRoots(cb) {
     ),
     { timeout: 3000 },
     (err, out) => {
+      // Without pane PIDs there is nothing usable to scan: the client PTY is
+      // not the parent of the pane processes, so falling back to it would
+      // report every session as having no ports. Skip this tick instead and
+      // keep whatever was found last time.
+      if (err) {
+        cb(null);
+        return;
+      }
       const panesByTmuxName = new Map();
       // Session names may contain spaces, so split on the tab we asked for.
-      if (!err) {
-        for (const line of out.split("\n")) {
-          const tab = line.indexOf("\t");
-          if (tab < 0) continue;
-          const pid = parseInt(line.slice(tab + 1), 10);
-          if (!pid) continue;
-          const key = line.slice(0, tab);
-          if (!panesByTmuxName.has(key)) panesByTmuxName.set(key, []);
-          panesByTmuxName.get(key).push(pid);
-        }
+      for (const line of out.split("\n")) {
+        const tab = line.indexOf("\t");
+        if (tab < 0) continue;
+        const pid = parseInt(line.slice(tab + 1), 10);
+        if (!pid) continue;
+        const key = line.slice(0, tab);
+        if (!panesByTmuxName.has(key)) panesByTmuxName.set(key, []);
+        panesByTmuxName.get(key).push(pid);
       }
       for (const session of sessionManager.sessions.values()) {
-        const panes = session.tmuxName
-          ? panesByTmuxName.get(session.tmuxName)
-          : null;
+        if (!session.tmuxName) {
+          addPty(session); // ephemeral panes are still plain shells
+          continue;
+        }
+        const panes = panesByTmuxName.get(session.tmuxName);
         if (panes) roots.set(session.name, panes);
-        else addPty(session);
       }
       cb(roots);
     },
@@ -1078,6 +1085,10 @@ function scanListeningPorts() {
   portScanBusy = true;
 
   getPortScanRoots((rootsByName) => {
+  if (!rootsByName) {
+    portScanBusy = false;
+    return;
+  }
   execFile(
     "lsof",
     ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"],
@@ -1232,8 +1243,9 @@ server.listen(PORT, HOST, () => {
   console.log("");
   console.log("Press Ctrl+C to stop the server");
 
-  // Reattach to sessions that outlived the previous run (tmux mode only).
-  if (sessionManager.adoptTmuxSessions() > 0) broadcastSessionList();
+  // Reattach to sessions that outlived the previous run (tmux mode only). No
+  // client can be connected yet, so there is nothing to broadcast to.
+  sessionManager.adoptTmuxSessions();
 
   // Begin scanning for dev-server ports to surface in the session list.
   scanListeningPorts();

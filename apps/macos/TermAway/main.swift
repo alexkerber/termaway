@@ -887,21 +887,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
 
         // `ip --1` returns a single address (IPv4 preferred); one call keeps the
         // 2s timeout honest. Bracket IPv6 for use in a URL.
-        guard let ip = runTailscale(bin: bin, args: ["ip", "--1"]), !ip.isEmpty else {
+        // TAILSCALE_BE_CLI makes the App Store build's bundled binary act as the
+        // CLI instead of launching the GUI.
+        guard let out = runCLI(
+            bin: bin,
+            args: ["ip", "--1"],
+            extraEnv: ["TAILSCALE_BE_CLI": "1"]
+        ) else { return nil }
+        guard let ip = out.split(whereSeparator: \.isNewline).first
+            .map({ $0.trimmingCharacters(in: .whitespaces) }), !ip.isEmpty else {
             return nil
         }
         return ip.contains(":") ? "[\(ip)]" : ip
     }
 
-    /// Runs the Tailscale CLI time-boxed, returning its first output line.
-    private func runTailscale(bin: String, args: [String]) -> String? {
+    /// Runs a CLI time-boxed, returning its stdout, or nil if it failed.
+    private func runCLI(bin: String, args: [String], extraEnv: [String: String] = [:]) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: bin)
         process.arguments = args
-        // The Mac App Store build ships the CLI inside the app bundle; this env
-        // var makes it act as the CLI instead of launching the GUI.
         var env = ProcessInfo.processInfo.environment
-        env["TAILSCALE_BE_CLI"] = "1"
+        for (key, value) in extraEnv { env[key] = value }
         process.environment = env
 
         let outPipe = Pipe()
@@ -927,9 +933,86 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         guard process.terminationStatus == 0 else { return nil }
 
         let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)?
-            .split(whereSeparator: \.isNewline).first
+        return String(data: data, encoding: .utf8)
+    }
+
+    // MARK: - Session persistence (tmux)
+
+    /// Absolute paths first, like the server does: a GUI app inherits a minimal
+    /// PATH that usually misses Homebrew.
+    func findTmux() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/tmux",
+            "/usr/local/bin/tmux",
+            "/usr/bin/tmux",
+            "/opt/local/bin/tmux",
+        ]
+        return candidates.first(where: {
+            FileManager.default.isExecutableFile(atPath: $0)
+        })
+    }
+
+    /// Sessions tmux is holding for us on TermAway's private socket.
+    func persistedSessionNames() -> [String] {
+        guard let bin = findTmux() else { return [] }
+        guard let out = runCLI(
+            bin: bin,
+            args: ["-L", "termaway-\(port)", "list-sessions", "-F", "#{session_name}"]
+        ) else { return [] }  // no server on the socket = nothing held
+        return out.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Apply the persistence toggle. Returns the value that actually took
+    /// effect, which differs from the request when tmux is missing or the user
+    /// backs out of discarding running sessions.
+    func applyPersistSessions(_ enabled: Bool) -> Bool {
+        if enabled {
+            guard findTmux() != nil else {
+                // Silently falling back to non-persistent sessions would leave
+                // the toggle claiming something that is not true.
+                let alert = NSAlert()
+                alert.messageText = "tmux is not installed"
+                alert.informativeText = "Keeping sessions running needs tmux. Install it (brew install tmux) and turn this on again."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return false
+            }
+            persistSessions = true
+            restartServer()
+            return true
+        }
+
+        // Turning persistence off would leave whatever tmux is holding running
+        // with nothing in the UI pointing at it. Ask instead of orphaning it.
+        let held = persistedSessionNames()
+        if !held.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = held.count == 1
+                ? "1 session is still running in tmux"
+                : "\(held.count) sessions are still running in tmux"
+            alert.informativeText = "TermAway can't show them without persistence. Stop them now, or leave them running and switch persistence back on to reach them again."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Stop Them")
+            alert.addButton(withTitle: "Leave Running")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                if let bin = findTmux() {
+                    _ = runCLI(bin: bin, args: ["-L", "termaway-\(port)", "kill-server"])
+                }
+            case .alertThirdButtonReturn:
+                return true  // cancelled — persistence stays on
+            default:
+                break  // leave them running
+            }
+        }
+
+        persistSessions = false
+        restartServer()
+        return false
     }
 
     // MARK: - Notifications
@@ -1422,8 +1505,8 @@ struct PreferencesView: View {
             }
             .toggleStyle(.checkbox)
             .onChange(of: viewModel.persistSessions) { newValue in
-                viewModel.appDelegate.persistSessions = newValue
-                viewModel.appDelegate.restartServer()
+                let applied = viewModel.appDelegate.applyPersistSessions(newValue)
+                if applied != newValue { viewModel.persistSessions = applied }
             }
 
             SectionDivider()

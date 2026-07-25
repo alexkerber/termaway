@@ -16,9 +16,11 @@ if (!sm.tmux) {
   process.exit(0);
 }
 
+// Probe, not a mutation: once the last session is gone the tmux server exits
+// and list-sessions fails, which is simply "no sessions".
 const tmuxSessions = () => {
-  const out = sm._tmux("list-sessions", "-F", "#{session_name}");
-  return out ? out.trim().split("\n").filter(Boolean) : [];
+  const r = sm._tmuxResult("list-sessions", "-F", "#{session_name}");
+  return r.ok ? r.stdout.trim().split("\n").filter(Boolean) : [];
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -32,6 +34,16 @@ async function expectSessions(expected, message) {
   assert.deepEqual(tmuxSessions(), expected, message);
 }
 
+// Record what a session would send to attached clients.
+function spy(session) {
+  const sent = [];
+  session.clients.add({
+    readyState: 1,
+    send: (json) => sent.push(JSON.parse(json)),
+  });
+  return sent;
+}
+
 try {
   // --- create -------------------------------------------------------------
   // The dot matters: tmux accepts it in a name but reads it as a window
@@ -39,6 +51,26 @@ try {
   sm.create("app.web");
   assert.ok(sm.info("app.web").isTmux, "session should be tmux-backed");
   await expectSessions(["app%2Eweb"], "dot must be encoded");
+
+  // --- no window where the session does not exist yet ---------------------
+  // The tmux session is created synchronously, so a kill that lands in the
+  // same tick still finds it. If creation were left to the PTY, tmux would
+  // finish afterwards and orphan a session that comes back on next start.
+  sm.create("racy");
+  sm.kill("racy");
+  await expectSessions(
+    ["app%2Eweb"],
+    "an immediate kill must not orphan a session",
+  );
+
+  sm.create("racy2");
+  sm.rename("racy2", "renamed-fast");
+  await expectSessions(
+    ["app%2Eweb", "renamed-fast"],
+    "an immediate rename must reach tmux",
+  );
+  sm.kill("renamed-fast");
+  await expectSessions(["app%2Eweb"]);
 
   // Ephemeral split panes are hidden from the list and auto-killed, so
   // persisting one would leave a tmux session nobody can reach.
@@ -79,9 +111,19 @@ try {
   // --- shutdown leaves tmux alone ----------------------------------------
   // This is the one that makes persistence real: "Stop Server" walks every
   // session through kill(), which must not end the tmux session.
+  const sent = spy(sm.get("api"));
   sm.shuttingDown = true;
   sm.kill("api");
   await expectSessions(["api"], "shutdown must leave the tmux session running");
+  // ...and must stay quiet about it. iOS discards the composer draft on both
+  // "killed" and "exited", so announcing either would lose work for a session
+  // that is still running.
+  await sleep(600); // let the PTY's exit land
+  assert.deepEqual(
+    sent.map((m) => m.type).filter((t) => t === "killed" || t === "exited"),
+    [],
+    "shutdown must not tell clients the session was killed or exited",
+  );
 
   // --- a new run adopts it ------------------------------------------------
   const restarted = new SessionManager({ port: PORT });

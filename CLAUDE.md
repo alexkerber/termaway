@@ -63,11 +63,23 @@ Four things have to stay true, and each has a case in
 - **Shutdown must not kill tmux sessions.** `shutdown()` walks every session
   through `kill()`; the `shuttingDown` flag makes it disconnect the client and
   leave the session running. Getting this wrong silently defeats the feature.
+  It also has to stay quiet — iOS discards the composer draft on both `killed`
+  and `exited`, so announcing either would lose work for a live session.
 - **An explicit kill must end the tmux session**, or it returns on next start.
 - **Rename must rename the tmux session**, or the old name returns.
 - **A PTY exit is not a dead session.** `tmux detach` and a killed client look
   identical to a shell exiting; `_reattach()` checks `has-session` and spawns a
   new client instead of reporting the session gone.
+
+The tmux session is created up front, detached and synchronously
+(`new-session -d`), and the PTY only runs `attach-session`. Letting the PTY
+create it with `new-session -A` left a window where the session did not exist
+yet: an immediate kill or rename would miss, tmux would finish creating it
+afterwards, and the orphan would be adopted on the next start. For the same
+reason adoption is attach-only. Commands that change tmux state throw rather
+than return null, so state and events only change after tmux agrees — and
+`_tmuxAlive()` separates "no such session" (exit 1) from "tmux could not be
+asked", which must not be read as a dead session.
 
 Two details that are easy to get wrong: tmux accepts a `.` in a session name but
 reads it as a window separator in a target, so names are percent-encoded
