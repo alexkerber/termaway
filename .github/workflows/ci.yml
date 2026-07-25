@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # bun.lock is the committed lockfile; package-lock.json is gitignored, so
+      # `npm ci` has nothing to install from. Install with bun, run with node —
+      # node-pty's native bindings need the Node runtime.
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Without tmux the persistence tests skip cleanly, which would quietly
+      # hide the feature's most important lifecycle coverage.
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - run: bun install --frozen-lockfile
+      - run: npm test
