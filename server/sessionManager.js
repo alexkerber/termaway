@@ -69,12 +69,17 @@ function findTmux() {
 //
 // A payload can contain neither BEL nor ESC, which is what makes matching them
 // with one regex safe.
-const OSC_NOTIFICATION = /\x1b\](9|777);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+const OSC_NOTIFICATION =
+  /\x1b\](9|777);([^\x07\x1b\x18\x1a]*)(?:\x07|\x1b\\)/g;
 
 // Any OSC, notification or not. BEL is a valid OSC terminator, so a shell that
 // sets the window title on every prompt emits one constantly — those must not
 // be read as the program ringing for attention.
-const ANY_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+//
+// CAN (0x18) and SUB (0x1a) abort a sequence in progress, which is why no
+// payload may contain them: a terminal would stop parsing there and treat the
+// rest as ordinary output, and so must we.
+const ANY_OSC = /\x1b\][^\x07\x1b\x18\x1a]*(?:\x07|\x1b\\)/g;
 
 // A sequence can straddle two PTY reads, so an unterminated tail is carried to
 // the next chunk. Bounded: something that opens an OSC and never closes it must
@@ -85,7 +90,7 @@ const MAX_OSC_CARRY = 4096;
 // an unfinished payload, or a payload plus the first half of an ST. Anything
 // else is not a sequence in progress — a program that abandoned one with a
 // stray ESC, most often — and must settle so the bells after it still count.
-const OSC_IN_PROGRESS = /^\x1b(\][^\x07\x1b]*\x1b?)?$/;
+const OSC_IN_PROGRESS = /^\x1b(\][^\x07\x1b\x18\x1a]*\x1b?)?$/;
 
 // An OSC notification can be driven by whatever is on the terminal: a remote
 // host, a file being cat'd. Unlike the loopback hook it isn't a deliberate
@@ -714,6 +719,7 @@ class SessionManager {
       // explicit /api/notify hook rather than a bell. Checking it first also
       // keeps its own terminating BEL from firing a second, blank alert.
       const { notification, bell } = this._scanAttention(session, data);
+      let notified = false;
       if (notification) {
         // Rate-limited rather than gated on `changed`: gating would mute a
         // second, different message until the user acknowledged the first,
@@ -722,13 +728,17 @@ class SessionManager {
         const now = Date.now();
         if (now - session.lastOscNotifyAt >= OSC_NOTIFY_INTERVAL) {
           session.lastOscNotifyAt = now;
+          notified = true;
           this.markAttention(session.name, {
             source: "notify",
             title: notification.title || session.name,
             body: notification.body,
           });
         }
-      } else if (bell) {
+      }
+      // A chunk can carry both. If the notification was rate-limited away, a
+      // bare bell in the same chunk still has to be heard.
+      if (!notified && bell) {
         // A bare bell means "look at me" with nothing else to say. Claude Code,
         // Codex, OpenCode and most CLIs ring it on notifications, permission
         // prompts and task completion — zero config, any tool.
@@ -778,20 +788,31 @@ class SessionManager {
       latest = parseOscNotification(match[1], match[2]) ?? latest;
     }
 
-    // Everything left once complete sequences are removed. A BEL in here is the
-    // program ringing; one that merely terminated an OSC is not.
-    const plain = buf.replace(ANY_OSC, "");
+    // Where the last complete sequence ends. Only the tail after it can still
+    // hold one in progress — an opener earlier than that was abandoned the
+    // moment the next sequence began, so carrying it would let a later bell be
+    // swallowed as its terminator.
+    let completeEnd = 0;
+    ANY_OSC.lastIndex = 0;
+    while ((match = ANY_OSC.exec(buf)) !== null) {
+      completeEnd = match.index + match[0].length;
+    }
+    const tail = buf.slice(completeEnd);
 
     // Whatever opens a sequence without closing it may finish in the next read.
     // A read can also end between the ESC and the "]", so a trailing lone ESC
     // has to be kept too.
-    const opened = plain.lastIndexOf("\x1b]");
+    const opened = tail.lastIndexOf("\x1b]");
     let carry = "";
-    if (opened !== -1) carry = plain.slice(opened);
-    else if (plain.endsWith("\x1b")) carry = "\x1b";
+    if (opened !== -1) carry = tail.slice(opened);
+    else if (tail.endsWith("\x1b")) carry = "\x1b";
     if (!OSC_IN_PROGRESS.test(carry)) carry = "";
 
-    const settled = plain.slice(0, plain.length - carry.length);
+    // A BEL counts when it is outside every complete sequence and outside the
+    // fragment being carried.
+    const settled =
+      buf.slice(0, completeEnd).replace(ANY_OSC, "") +
+      tail.slice(0, tail.length - carry.length);
 
     // A sequence that never ends must not grow memory — but dropping the carry
     // entirely would forget that we are inside one, and its eventual
@@ -815,6 +836,9 @@ class SessionManager {
     console.log(`Reattaching tmux session "${session.name}"`);
     try {
       session.pty = this._spawnPty(session.tmuxName);
+      // A new PTY is a new stream; a fragment from the old one would splice
+      // onto it and invent a sequence that was never sent.
+      session.oscCarry = "";
     } catch (err) {
       // tmux still has the session, we just can't reach it right now. Drop it
       // from the list quietly: reporting an exit would make clients discard

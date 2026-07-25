@@ -161,4 +161,34 @@ assert.deepEqual(
   "a bell after an aborted sequence must still ring",
 );
 
+// --- an opener abandoned by a later sequence must not eat a bell ------------
+// A terminal drops the first sequence the moment the second one starts. Keeping
+// the dead opener meant the next real BEL was consumed as its terminator.
+s = session("n");
+out = feed(s, "\x1b]0;old", `\x1b]9;Done${BEL}`, `real${BEL}`);
+assert.deepEqual(
+  out.map((e) => e.source),
+  ["notify", "bell"],
+  "the notification lands and the later bell still rings",
+);
+
+// --- CAN and SUB abort a sequence -------------------------------------------
+// A terminal stops parsing at 0x18 or 0x1a and treats the rest as output.
+s = session("o");
+out = feed(s, `\x1b]9;fake\x18text${BEL}`);
+assert.deepEqual(
+  out.map((e) => e.source),
+  ["bell"],
+  "an aborted sequence is not a notification, and its BEL is a plain bell",
+);
+for (const abort of ["\x18", "\x1a"]) {
+  s = session(`o${abort.charCodeAt(0)}`);
+  out = feed(s, `\x1b]0;title${abort}`, `real${BEL}`);
+  assert.deepEqual(
+    out.map((e) => e.source),
+    ["bell"],
+    "a bell after an aborted sequence must still ring",
+  );
+}
+
 console.log("ok - OSC notifications");
