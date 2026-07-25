@@ -408,6 +408,7 @@ class ConnectionManager: ObservableObject {
                 // No auth required, we're good
                 isAuthenticated = true
                 sendMessage(["type": "list"])
+                flushPendingReply()
             }
             return
 
@@ -421,6 +422,8 @@ class ConnectionManager: ObservableObject {
             if let sessionName = currentSession?.name {
                 sendMessage(["type": "attach", "name": sessionName])
             }
+            // A reply typed on the lock screen may have been waiting for this.
+            flushPendingReply()
             return
 
         case "auth-failed":
@@ -762,8 +765,12 @@ class ConnectionManager: ObservableObject {
         content.title = title
         if !body.isEmpty { content.body = body }
         content.sound = .default
-        // Carries the session so a tap can deep-link straight to it.
-        if let sessionName { content.userInfo = ["sessionName": sessionName] }
+        // Carries the session so a tap can deep-link straight to it, and lets
+        // the reply action know where to send what the user types.
+        if let sessionName {
+            content.userInfo = ["sessionName": sessionName]
+            content.categoryIdentifier = Self.agentCategoryIdentifier
+        }
 
         let request = UNNotificationRequest(
             identifier: UUID().uuidString,
@@ -776,6 +783,95 @@ class ConnectionManager: ObservableObject {
                 dlog("Notification error: \(error)")
             }
         }
+    }
+
+    // MARK: - Replying from the notification
+
+    static let agentCategoryIdentifier = "agentAttention"
+    static let replyActionIdentifier = "agentReply"
+
+    /// Register the reply action. Called once at launch; without a registered
+    /// category the notification is just text.
+    static func registerNotificationCategories() {
+        let reply = UNTextInputNotificationAction(
+            identifier: replyActionIdentifier,
+            title: "Reply",
+            options: [],
+            textInputButtonTitle: "Send",
+            textInputPlaceholder: "y"
+        )
+        let category = UNNotificationCategory(
+            identifier: agentCategoryIdentifier,
+            actions: [reply],
+            intentIdentifiers: [],
+            options: []
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+    }
+
+    /// Send what the user typed on the lock screen straight to the session.
+    ///
+    /// The app may be suspended, so this can involve connecting and
+    /// authenticating first, and iOS only allows seconds for it. If that
+    /// doesn't finish in time the reply is kept as the session's composer
+    /// draft and the user is told — it must never disappear silently.
+    func deliverReply(_ text: String, to sessionName: String, completion: @escaping () -> Void) {
+        // A reply is one line the user wants entered. Anything they managed to
+        // paste in with newlines is flattened rather than executed line by line.
+        let line = text
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        guard !line.isEmpty else { completion(); return }
+
+        var finished = false
+        let finish: (Bool) -> Void = { [weak self] delivered in
+            guard !finished else { return }
+            finished = true
+            if delivered {
+                self?.sendInput(line + "\n", to: sessionName)
+            } else {
+                // Park it where the user will find it, and say so.
+                self?.saveDraft(line, for: sessionName)
+                self?.showNotification(
+                    title: "Couldn't reach your Mac",
+                    body: "Your reply is waiting in \(sessionName).",
+                    sessionName: sessionName
+                )
+            }
+            completion()
+        }
+
+        if isConnected && isAuthenticated {
+            finish(true)
+            return
+        }
+
+        // Not connected: try, but don't outlive the window iOS gives us.
+        // A second reply while one is still waiting must not orphan the first —
+        // iOS requires every completion handler to be called.
+        if let stranded = replyWaiter {
+            replyWaiter = nil
+            stranded(false)
+        }
+        replyWaiter = finish
+        connect()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, self.replyWaiter != nil else { return }
+            self.replyWaiter = nil
+            finish(false)
+        }
+    }
+
+    /// Set while a notification reply is waiting for the connection to come up.
+    private var replyWaiter: ((Bool) -> Void)?
+
+    /// Called once the socket is authenticated, so a waiting reply can go out.
+    func flushPendingReply() {
+        guard let waiter = replyWaiter else { return }
+        replyWaiter = nil
+        waiter(true)
     }
 
     // MARK: - Composer Drafts (per session, persisted)
