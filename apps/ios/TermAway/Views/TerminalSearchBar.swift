@@ -250,7 +250,17 @@ extension Notification.Name {
 /// and provides proportional scroll-to-match via SwiftTerm's TerminalView.
 @MainActor
 class TerminalSearchManager: ObservableObject {
-    @Published var searchQuery = ""
+    // Re-run on every keystroke. The query is bound straight to the text field,
+    // and nothing else observed it — so the only search that ever ran was the
+    // one when the field opened, with the field empty. It reported 0 matches
+    // for a word plainly on screen. performSearch debounces, so typing fast
+    // costs one pass, not one per character.
+    @Published var searchQuery = "" {
+        didSet {
+            guard searchQuery != oldValue else { return }
+            performSearch()
+        }
+    }
     @Published var matches: [Range<String.Index>] = []
     @Published var currentMatchIndex = 0
 
