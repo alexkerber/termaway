@@ -57,6 +57,63 @@ function findTmux() {
   return TMUX_PATHS.find(isExecutable) ?? null;
 }
 
+// =============================================================================
+// OSC notifications
+// =============================================================================
+//
+// Terminals converged on two escape sequences for "tell the user something",
+// and agent CLIs, ntfy hooks and tmux hooks already speak one of them:
+//
+//   OSC 9   ESC ] 9 ; message                  BEL | ST
+//   OSC 777 ESC ] 777 ; notify ; title ; body  BEL | ST
+//
+// A payload can contain neither BEL nor ESC, which is what makes matching them
+// with one regex safe.
+const OSC_NOTIFICATION =
+  /\x1b\](9|777);([^\x07\x1b\x18\x1a]*)(?:\x07|\x1b\\)/g;
+
+// Any OSC, notification or not. BEL is a valid OSC terminator, so a shell that
+// sets the window title on every prompt emits one constantly — those must not
+// be read as the program ringing for attention.
+//
+// CAN (0x18) and SUB (0x1a) abort a sequence in progress, which is why no
+// payload may contain them: a terminal would stop parsing there and treat the
+// rest as ordinary output, and so must we.
+const ANY_OSC = /\x1b\][^\x07\x1b\x18\x1a]*(?:\x07|\x1b\\)/g;
+
+// A sequence can straddle two PTY reads, so an unterminated tail is carried to
+// the next chunk. Bounded: something that opens an OSC and never closes it must
+// not be able to grow memory.
+const MAX_OSC_CARRY = 4096;
+
+// What a carried fragment is allowed to look like: a lone ESC, an opener with
+// an unfinished payload, or a payload plus the first half of an ST. Anything
+// else is not a sequence in progress — a program that abandoned one with a
+// stray ESC, most often — and must settle so the bells after it still count.
+const OSC_IN_PROGRESS = /^\x1b(\][^\x07\x1b\x18\x1a]*\x1b?)?$/;
+
+// An OSC notification can be driven by whatever is on the terminal: a remote
+// host, a file being cat'd. Unlike the loopback hook it isn't a deliberate
+// local act, so it is rate-limited per session.
+const OSC_NOTIFY_INTERVAL = 2000;
+
+function parseOscNotification(code, payload) {
+  if (code === "9") {
+    // OSC 9 is multiplexed: iTerm2 sends progress as `9;4;state;percent` and
+    // ConEmu uses `9;<digit>;…` for several other things. Only the plain
+    // `9;message` form is a notification — without this, a build with a
+    // progress bar raises an alert on every tick.
+    if (!payload || /^\d+(;|$)/.test(payload)) return null;
+    return { title: "", body: payload };
+  }
+  // 777 addresses several kinds of thing; only "notify" concerns us.
+  const parts = payload.split(";");
+  if (parts[0] !== "notify") return null;
+  const title = parts[1] ?? "";
+  const body = parts.slice(2).join(";");
+  return title || body ? { title, body } : null;
+}
+
 // tmux reads "." and ":" in a target as window/pane separators, so a session
 // named "my.app" is creatable but not addressable ("can't find window: my").
 // Percent-encode the dot; "%" is rejected by the session-name validator, so the
@@ -105,6 +162,9 @@ class Session {
     // for a detached client and reattached.
     this.killing = false;
     this.lastSpawnAt = 0;
+    // Tail of an OSC sequence that hasn't been terminated yet.
+    this.oscCarry = "";
+    this.lastOscNotifyAt = 0;
   }
 
   // Store output in scrollback buffer
@@ -653,10 +713,35 @@ class SessionManager {
   _setupHandlers(session) {
     session.pty.onData((data) => {
       session.pushScrollback(data);
-      // Passive attention: a terminal bell (BEL, \x07) means "look at me".
-      // Claude Code, Codex, OpenCode and most CLIs ring it on notifications,
-      // permission prompts and task completion — zero config, any tool.
-      if (data.includes("\x07")) {
+      // Attention, in order of how much the program told us.
+      //
+      // An OSC notification carries a real message, so it is treated like the
+      // explicit /api/notify hook rather than a bell. Checking it first also
+      // keeps its own terminating BEL from firing a second, blank alert.
+      const { notification, bell } = this._scanAttention(session, data);
+      let notified = false;
+      if (notification) {
+        // Rate-limited rather than gated on `changed`: gating would mute a
+        // second, different message until the user acknowledged the first,
+        // while a chatty or hostile stream could otherwise raise one banner per
+        // chunk of output.
+        const now = Date.now();
+        if (now - session.lastOscNotifyAt >= OSC_NOTIFY_INTERVAL) {
+          session.lastOscNotifyAt = now;
+          notified = true;
+          this.markAttention(session.name, {
+            source: "notify",
+            title: notification.title || session.name,
+            body: notification.body,
+          });
+        }
+      }
+      // A chunk can carry both. If the notification was rate-limited away, a
+      // bare bell in the same chunk still has to be heard.
+      if (!notified && bell) {
+        // A bare bell means "look at me" with nothing else to say. Claude Code,
+        // Codex, OpenCode and most CLIs ring it on notifications, permission
+        // prompts and task completion — zero config, any tool.
         this.markAttention(session.name, { source: "bell" });
       }
       // Include session name so clients can route to correct pane
@@ -689,6 +774,54 @@ class SessionManager {
     });
   }
 
+  // What this chunk of output is asking for: `notification` when the program
+  // sent an OSC 9/777 (the last one, since attention is a single flag and the
+  // newest message is the useful one), and `bell` when a BEL appears outside
+  // any escape sequence.
+  _scanAttention(session, data) {
+    const buf = session.oscCarry + data;
+
+    let latest = null;
+    OSC_NOTIFICATION.lastIndex = 0;
+    let match;
+    while ((match = OSC_NOTIFICATION.exec(buf)) !== null) {
+      latest = parseOscNotification(match[1], match[2]) ?? latest;
+    }
+
+    // Where the last complete sequence ends. Only the tail after it can still
+    // hold one in progress — an opener earlier than that was abandoned the
+    // moment the next sequence began, so carrying it would let a later bell be
+    // swallowed as its terminator.
+    let completeEnd = 0;
+    ANY_OSC.lastIndex = 0;
+    while ((match = ANY_OSC.exec(buf)) !== null) {
+      completeEnd = match.index + match[0].length;
+    }
+    const tail = buf.slice(completeEnd);
+
+    // Whatever opens a sequence without closing it may finish in the next read.
+    // A read can also end between the ESC and the "]", so a trailing lone ESC
+    // has to be kept too.
+    const opened = tail.lastIndexOf("\x1b]");
+    let carry = "";
+    if (opened !== -1) carry = tail.slice(opened);
+    else if (tail.endsWith("\x1b")) carry = "\x1b";
+    if (!OSC_IN_PROGRESS.test(carry)) carry = "";
+
+    // A BEL counts when it is outside every complete sequence and outside the
+    // fragment being carried.
+    const settled =
+      buf.slice(0, completeEnd).replace(ANY_OSC, "") +
+      tail.slice(0, tail.length - carry.length);
+
+    // A sequence that never ends must not grow memory — but dropping the carry
+    // entirely would forget that we are inside one, and its eventual
+    // terminating BEL would then read as a bell. Two bytes remember it.
+    session.oscCarry = carry.length > MAX_OSC_CARRY ? "\x1b]" : carry;
+
+    return { notification: latest, bell: settled.includes("\x07") };
+  }
+
   // Replace the PTY of a tmux-backed session whose client went away but whose
   // tmux session is still alive. Returns true if the session was kept.
   _reattach(session) {
@@ -703,6 +836,9 @@ class SessionManager {
     console.log(`Reattaching tmux session "${session.name}"`);
     try {
       session.pty = this._spawnPty(session.tmuxName);
+      // A new PTY is a new stream; a fragment from the old one would splice
+      // onto it and invent a sequence that was never sent.
+      session.oscCarry = "";
     } catch (err) {
       // tmux still has the session, we just can't reach it right now. Drop it
       // from the list quietly: reporting an exit would make clients discard
