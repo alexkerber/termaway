@@ -91,6 +91,14 @@ BEL is itself a valid OSC terminator, so a shell that sets its window title on
 every prompt used to ring the bell constantly; the bell check now runs against the
 stream with complete escape sequences removed.
 
+Because the bell check strips *every* complete OSC, a BEL-terminated sequence we
+don't parse — kitty's OSC 99, other OSC 1337 forms — no longer rings a generic
+bell the way it used to. That is right for window titles and wrong for a kitty
+user; add the code to `OSC_NOTIFICATION` if one shows up.
+
+An OSC notification can be driven by whatever is on the terminal — a remote host,
+a file being `cat`'d — so unlike the loopback hook it is rate-limited per session.
+
 **tmux swallows OSC 9 and 777.** Verified against real tmux, with and without
 `allow-passthrough`, and with the DCS wrapper — none reach the client. So rich
 notifications only work with persistence off. BEL does pass through tmux, so plain

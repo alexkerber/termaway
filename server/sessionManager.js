@@ -81,13 +81,24 @@ const ANY_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 // not be able to grow memory.
 const MAX_OSC_CARRY = 4096;
 
+// What a carried fragment is allowed to look like: a lone ESC, an opener with
+// an unfinished payload, or a payload plus the first half of an ST. Anything
+// else is not a sequence in progress — a program that abandoned one with a
+// stray ESC, most often — and must settle so the bells after it still count.
+const OSC_IN_PROGRESS = /^\x1b(\][^\x07\x1b]*\x1b?)?$/;
+
+// An OSC notification can be driven by whatever is on the terminal: a remote
+// host, a file being cat'd. Unlike the loopback hook it isn't a deliberate
+// local act, so it is rate-limited per session.
+const OSC_NOTIFY_INTERVAL = 2000;
+
 function parseOscNotification(code, payload) {
   if (code === "9") {
     // OSC 9 is multiplexed: iTerm2 sends progress as `9;4;state;percent` and
     // ConEmu uses `9;<digit>;…` for several other things. Only the plain
     // `9;message` form is a notification — without this, a build with a
     // progress bar raises an alert on every tick.
-    if (!payload || /^\d;/.test(payload)) return null;
+    if (!payload || /^\d+(;|$)/.test(payload)) return null;
     return { title: "", body: payload };
   }
   // 777 addresses several kinds of thing; only "notify" concerns us.
@@ -148,6 +159,7 @@ class Session {
     this.lastSpawnAt = 0;
     // Tail of an OSC sequence that hasn't been terminated yet.
     this.oscCarry = "";
+    this.lastOscNotifyAt = 0;
   }
 
   // Store output in scrollback buffer
@@ -703,11 +715,19 @@ class SessionManager {
       // keeps its own terminating BEL from firing a second, blank alert.
       const { notification, bell } = this._scanAttention(session, data);
       if (notification) {
-        this.markAttention(session.name, {
-          source: "notify",
-          title: notification.title || session.name,
-          body: notification.body,
-        });
+        // Rate-limited rather than gated on `changed`: gating would mute a
+        // second, different message until the user acknowledged the first,
+        // while a chatty or hostile stream could otherwise raise one banner per
+        // chunk of output.
+        const now = Date.now();
+        if (now - session.lastOscNotifyAt >= OSC_NOTIFY_INTERVAL) {
+          session.lastOscNotifyAt = now;
+          this.markAttention(session.name, {
+            source: "notify",
+            title: notification.title || session.name,
+            body: notification.body,
+          });
+        }
       } else if (bell) {
         // A bare bell means "look at me" with nothing else to say. Claude Code,
         // Codex, OpenCode and most CLIs ring it on notifications, permission
@@ -769,9 +789,15 @@ class SessionManager {
     let carry = "";
     if (opened !== -1) carry = plain.slice(opened);
     else if (plain.endsWith("\x1b")) carry = "\x1b";
-    session.oscCarry = carry.length > MAX_OSC_CARRY ? "" : carry;
+    if (!OSC_IN_PROGRESS.test(carry)) carry = "";
 
     const settled = plain.slice(0, plain.length - carry.length);
+
+    // A sequence that never ends must not grow memory — but dropping the carry
+    // entirely would forget that we are inside one, and its eventual
+    // terminating BEL would then read as a bell. Two bytes remember it.
+    session.oscCarry = carry.length > MAX_OSC_CARRY ? "\x1b]" : carry;
+
     return { notification: latest, bell: settled.includes("\x07") };
   }
 

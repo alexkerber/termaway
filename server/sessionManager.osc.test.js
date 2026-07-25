@@ -12,10 +12,16 @@ const sm = new SessionManager();
 const raised = [];
 sm.onAttentionChange = (session, meta) => raised.push({ ...meta });
 
-// A stand-in for a session: _scanOscNotification only needs the carry field,
+// A stand-in for a session: _scanAttention only needs the carry field,
 // and markAttention only needs the map entry.
 function session(name) {
-  const s = { name, ephemeral: false, needsAttention: false, oscCarry: "" };
+  const s = {
+    name,
+    ephemeral: false,
+    needsAttention: false,
+    oscCarry: "",
+    lastOscNotifyAt: 0,
+  };
   sm.sessions.set(name, s);
   return s;
 }
@@ -66,6 +72,8 @@ assert.equal(out[0].body, "staging;then production");
 s = session("p");
 assert.deepEqual(feed(s, `\x1b]9;4;1;50${BEL}`), [], "iTerm2 progress must be ignored");
 assert.deepEqual(feed(s, `\x1b]9;1;something${BEL}`), [], "ConEmu 9;1 must be ignored");
+assert.deepEqual(feed(s, `\x1b]9;12${BEL}`), [], "a two-digit sub-command too");
+assert.deepEqual(feed(s, `\x1b]9;10;x${BEL}`), [], "and its multi-part form");
 assert.deepEqual(feed(s, `\x1b]9;${BEL}`), [], "an empty message is not a notification");
 // A real message that merely starts with a digit still works.
 out = feed(s, `\x1b]9;3 tests failed${BEL}`);
@@ -112,13 +120,45 @@ assert.deepEqual(out, [], "OSC 0 (window title) and SGR must be ignored");
 assert.equal(s.oscCarry, "", "nothing should be left carried");
 
 // --- an OSC that never terminates must not grow memory ----------------------
+// It collapses to the two bytes that say "still inside a sequence" rather than
+// to nothing: forgetting that is what let the terminator ring as a bell.
 s = session("j");
 feed(s, "\x1b]9;" + "x".repeat(5000));
-assert.equal(s.oscCarry, "", "an oversized unterminated sequence is dropped");
+assert.equal(s.oscCarry, "\x1b]", "an oversized sequence collapses but is remembered");
 
 // A partial sequence within the cap is kept, waiting for the rest.
 s = session("k");
 feed(s, "\x1b]9;still going");
 assert.ok(s.oscCarry.startsWith("\x1b]9;"), "a short partial is carried");
+
+// --- a huge sequence must not invent a bell ---------------------------------
+// OSC 52 clipboard sync and iTerm2's imgcat both base64 their whole payload, so
+// they routinely exceed the carry cap. Dropping the carry there used to forget
+// we were inside a sequence, and its terminator then rang as a real bell.
+s = session("l");
+out = feed(
+  s,
+  "\x1b]52;c;" + "A".repeat(3000),
+  "B".repeat(3000),
+  "C".repeat(2000) + BEL,
+);
+assert.deepEqual(out, [], "an oversized sequence must not ring the bell");
+assert.deepEqual(
+  feed(s, `still here${BEL}`).map((e) => e.source),
+  ["bell"],
+  "and a real bell after it must still ring",
+);
+
+// --- an abandoned sequence must not eat the bells after it ------------------
+// xterm aborts an OSC on ESC followed by anything but a backslash. It happens
+// on Ctrl-C mid-title-write, or cat of a binary. Carrying the dead opener meant
+// every later bell — an agent's permission prompt — was silently swallowed.
+s = session("m");
+out = feed(s, "\x1b]0;title\x1b[31m", `hello${BEL}`);
+assert.deepEqual(
+  out.map((e) => e.source),
+  ["bell"],
+  "a bell after an aborted sequence must still ring",
+);
 
 console.log("ok - OSC notifications");
