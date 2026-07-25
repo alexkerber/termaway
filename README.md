@@ -1,76 +1,60 @@
 # TermAway
 
-Your Mac terminal, on your iPad or iPhone. A self-hosted web-based terminal that provides access to your machine's terminal sessions from any browser on your LAN. Perfect for remote coding from bed, couch, or anywhere in your home.
+**Your Mac terminal, on your iPad.**
+
+TermAway is a self-hosted terminal for iPhone, iPad and the browser. A menu bar app on your Mac runs a small Node server; a native SwiftTerm client connects over your Wi-Fi or through Tailscale. No cloud, no account, no tracking — your terminal never leaves your network.
+
+[Download on the App Store](https://apps.apple.com/app/termaway/id6757634428) · [Download for Mac](https://github.com/alexkerber/termaway/releases/latest) · [termaway.app](https://termaway.app)
 
 ## Features
 
-- **LAN-Only by Design**: Your terminal never leaves your network. No cloud, no accounts, no tracking.
-- **Named Persistent Sessions**: Create sessions like "backend", "frontend", "flutter" and reconnect to them anytime
-- **Full Terminal Emulation**: 256 color and true color (24-bit) support via xterm.js
-- **Your Shell, Your Config**: Uses your default shell ($SHELL) with all your dotfiles (.zshrc, aliases, PATH, colors)
-- **Interactive CLI Support**: Works with vim, nano, htop, top, less, man pages, and Claude Code
-- **Session Persistence**: Sessions survive browser disconnect - reconnect picks up exactly where you left off
-- **Responsive Design**: Works on TV (fullscreen), tablet, and phone
-- **GPU Accelerated**: WebGL rendering for smooth performance
-- **Clickable URLs**: URLs in terminal output are clickable
-- **Auto-Reconnect**: Automatic reconnection with exponential backoff
+- **Nothing in the middle.** Your Mac talks to your iPad directly, over your own network or your own tailnet.
+- **Named sessions that stay put.** Create "backend", "frontend", "agent" and reattach from any device. Turn on tmux persistence and they survive a server restart or a reboot.
+- **Built for agents.** A session that rings the terminal bell — or posts to the local notify hook — raises a notification, and tapping it opens that session.
+- **Real terminal.** Your `$SHELL` with your dotfiles, 24-bit colour, and everything interactive: vim, htop, less, Claude Code, Codex.
+- **Made for touch.** A prompt composer with per-session drafts, an accessory bar with Tab, arrows, Esc and Ctrl chords, split panes on iPad, and tappable links to dev servers you start in a session.
+- **Several screens at once.** iPhone, iPad and a browser can watch the same session live.
 
-## Quick Start
+## Quick start
 
 ```bash
 bun install
 node server/index.js
 ```
 
-Then open http://localhost:3000 in your browser.
+Then open <http://localhost:3000>, or point the iOS app at your machine — it finds the server on your network by itself.
 
-For LAN access, use your machine's IP address or hostname:
+> node-pty ships native bindings, so the server needs the Node runtime. Bun is only used to install.
 
-- http://192.168.x.x:3000
-- http://your-machine.local:3000
+Most people never run this by hand: the [macOS app](https://github.com/alexkerber/termaway/releases/latest) bundles the server and runs it from the menu bar.
 
 ## Apps
 
-- **macOS**: Menu bar app that runs the terminal server (`apps/macos/`)
-- **iOS/iPadOS**: Native SwiftTerm client with liquid glass UI (`apps/ios/`)
-- **Web**: Browser-based client at http://localhost:3000 (`apps/web/`)
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **iOS / iPadOS** | Native SwiftTerm client — `apps/ios/`              |
+| **macOS**        | Menu bar app that hosts the server — `apps/macos/` |
+| **Web**          | Browser client, xterm.js — `apps/web/`             |
+| **Linux**        | Server only, via the release tarball — `server/`   |
 
 ## Configuration
 
-Environment variables:
+| Variable            | Default                      | Description                                                               |
+| ------------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `PORT`              | `3000`                       | HTTP server port. Also `--port`.                                          |
+| `HOST`              | `0.0.0.0`                    | Bind address.                                                             |
+| `TERMAWAY_PASSWORD` | —                            | Require this password before a client can do anything. Also `--password`. |
+| `SERVICE_NAME`      | `TermAway (<computer name>)` | How the server advertises itself over Bonjour.                            |
+| `TERMAWAY_TMUX`     | off                          | Set to `1` to run sessions inside tmux so they survive a server restart.  |
+| `TERMAWAY_TMUX_BIN` | —                            | Path to tmux, if it isn't in a standard location.                         |
+| `TERMAWAY_DEBUG`    | off                          | Set to `1` for per-message logging.                                       |
 
-| Variable | Default | Description                               |
-| -------- | ------- | ----------------------------------------- |
-| `PORT`   | 3000    | HTTP server port                          |
-| `HOST`   | 0.0.0.0 | Bind address (0.0.0.0 for all interfaces) |
+## Security
 
-## Usage
-
-### Creating Sessions
-
-1. Click the **+** button in the tab bar
-2. Enter a name for your session (e.g., "backend", "frontend")
-3. The session starts with your default shell
-
-### Managing Sessions
-
-- **Switch Sessions**: Click on a tab to switch
-- **Kill Session**: Click the × on a tab, or right-click → Kill Session
-- **Rename Session**: Right-click on a tab → Rename Session
-
-### Keyboard Shortcuts
-
-Terminal shortcuts work as expected:
-
-- `Ctrl+C` - Interrupt
-- `Ctrl+D` - EOF
-- `Ctrl+Z` - Suspend
-- `Tab` - Completion
-
-Copy/Paste:
-
-- `Ctrl+Shift+C` / `Ctrl+Shift+V` (Linux)
-- `Cmd+C` / `Cmd+V` (Mac)
+- **Local by default.** The server binds to your network and never phones home. There is no TermAway-hosted cloud or relay.
+- **Password auth.** Set `TERMAWAY_PASSWORD` (or `--password`). Attempts are rate-limited and compared in constant time.
+- **TLS.** Run `node server/generate-certs.js` to create a self-signed pair in `~/.termaway/certs`; the server then serves HTTPS and WSS.
+- **Reaching it from outside.** Use [Tailscale](https://tailscale.com) or another VPN, and set a password. Don't port-forward TermAway to the open internet.
 
 ## Architecture
 
@@ -83,62 +67,62 @@ Copy/Paste:
 │   ├── index.js              # Express + WebSocket server
 │   └── sessionManager.js     # PTY session lifecycle
 ├── website/                  # Marketing website (termaway.app)
-├── docs/                     # Feature plans and documentation
-└── builds/                   # Build outputs (.app, .zip)
+└── builds/                   # Release artifacts (.dmg, .tar.gz)
 ```
 
-### WebSocket Protocol
+A session is a [node-pty](https://github.com/microsoft/node-pty) process running your login shell. The server keeps a scrollback buffer per session and fans output out to every attached client, so several devices can watch the same terminal. With `TERMAWAY_TMUX=1` the PTY runs a tmux _client_ instead, and the shell belongs to the tmux server — which is what lets sessions outlive the TermAway process.
 
-Client → Server:
+### WebSocket protocol
 
-- `{ type: "create", name: "session-name" }` - Create new session
-- `{ type: "attach", name: "session-name" }` - Attach to session
-- `{ type: "input", data: "..." }` - Terminal input
-- `{ type: "resize", cols: 80, rows: 24 }` - Resize terminal
-- `{ type: "kill", name: "session-name" }` - Kill session
-- `{ type: "list" }` - List all sessions
+Client → server:
 
-Server → Client:
+| Message                                            | Purpose                              |
+| -------------------------------------------------- | ------------------------------------ |
+| `auth`                                             | Authenticate, when a password is set |
+| `create` / `attach` / `detach` / `kill` / `rename` | Session lifecycle                    |
+| `input` / `resize`                                 | Terminal I/O                         |
+| `list`                                             | Ask for the session list             |
+| `clipboard-set` / `clipboard-get`                  | Clipboard sync                       |
 
-- `{ type: "output", data: "..." }` - Terminal output
-- `{ type: "sessions", list: [...] }` - Session list
-- `{ type: "attached", name: "..." }` - Confirm attachment
-- `{ type: "created", name: "..." }` - Confirm creation
-- `{ type: "killed", name: "..." }` - Confirm kill
-- `{ type: "error", message: "..." }` - Error message
+Server → client:
 
-## Tech Stack
+| Message                                                  | Purpose                                        |
+| -------------------------------------------------------- | ---------------------------------------------- |
+| `output`                                                 | Terminal data                                  |
+| `sessions`                                               | Session list, broadcast on any change          |
+| `created` / `attached` / `killed` / `renamed` / `exited` | Lifecycle confirmations                        |
+| `auth-required` / `auth-success` / `auth-failed`         | Authentication                                 |
+| `attention`                                              | A session wants the user (bell or notify hook) |
+| `client-connected` / `client-disconnected`               | Someone else attached                          |
+| `clipboard-update` / `clipboard-content`                 | Clipboard sync                                 |
+| `error`                                                  | Something went wrong                           |
 
-- **Server**: Node.js, Express, ws, node-pty
-- **Web Client**: Vanilla JS, xterm.js, xterm addons (fit, webgl, web-links)
-- **iOS Client**: Swift, SwiftTerm, SwiftUI
-- **macOS App**: Swift, AppKit
+## Development
 
-## Security Notes
+```bash
+node --watch server/index.js   # server with auto-reload
+npm test                       # server self-checks
+```
 
-This is designed for LAN-only access without authentication. For external access:
+Building the apps and cutting a release is documented in [CLAUDE.md](CLAUDE.md).
 
-- Add authentication
-- Enable HTTPS
-- Consider using a VPN
+## Tech stack
+
+- **Server** — Node.js, Express, ws, node-pty
+- **Web client** — vanilla JS, xterm.js
+- **iOS client** — Swift, SwiftUI, SwiftTerm
+- **macOS app** — Swift, AppKit
+- **Website** — Astro
 
 ## Troubleshooting
 
-### Terminal not displaying correctly
+**Colours look wrong.** Your shell should see `TERM=xterm-256color`; check that your `.zshrc`/`.bashrc` doesn't override it.
 
-- Ensure your browser supports WebGL
-- Try refreshing the page
+**A session disappeared after restarting the server.** That's the default — sessions are tied to the server process. Turn on tmux persistence to keep them.
 
-### Session not reconnecting
+**The iOS app can't find the server.** Discovery uses Bonjour, which needs both devices on the same network. Over Tailscale, type the tailnet address by hand.
 
-- Check server is still running
-- Check network connectivity
-- Sessions are lost if server restarts
-
-### Colors not working
-
-- Your shell should detect TERM=xterm-256color
-- Make sure your .zshrc/.bashrc doesn't override TERM
+**The web terminal renders oddly.** It uses WebGL; try another browser or reload.
 
 ## License
 
