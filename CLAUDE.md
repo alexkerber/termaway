@@ -75,6 +75,23 @@ The session is created detached and synchronously; adoption is attach-only; and
 tmux commands that change state throw rather than return null, so nothing is
 mutated before tmux agrees. The reasons are on those lines in the code.
 
+#### Agents talking to each other
+
+A side effect worth knowing: because each named session *is* a tmux session on a
+shared private socket, tmux sets `$TMUX` inside it, so plain tmux commands reach
+the right server with no socket flag and no TermAway API:
+
+```bash
+tmux list-sessions -F '#{session_name}'          # who else is running
+tmux display -p '#{session_name}'                # who am I
+tmux capture-pane -p -t '=codex:' | tail -30     # read their screen
+tmux send-keys -t '=codex:' 'your message' Enter # write to them
+```
+
+`=name:` is an exact match, so `claude` won't also hit `claude-2`. This only
+works between *named* sessions — split panes are ephemeral and deliberately not
+tmux-backed, so they are not on the socket and can't be addressed.
+
 Two details that are easy to get wrong: tmux accepts a `.` in a session name but
 reads it as a window separator in a target, so names are percent-encoded
 (`app.web` → `app%2Eweb`); and in tmux mode the port scanner has to root at the
