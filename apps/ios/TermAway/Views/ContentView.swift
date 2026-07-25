@@ -217,20 +217,19 @@ struct SessionSidebarView: View {
         }
         .navigationTitle("Sessions")
         .toolbar {
-            // The button gets its own item so iOS sizes the Liquid Glass background
-            // around the button alone. Putting it in an HStack with the title made
-            // one background span both, which left the "+" 4pt off-centre in its
-            // own circle. ToolbarSpacer is the supported way to keep custom items
-            // in their own glass group.
+            // GlassCircleButton rather than a bare toolbar Button: with a
+            // navigationTitle set, the sidebar's bar renders its buttons plain,
+            // which left this "+" looking unlike the identical one in the detail
+            // bar. Our own component also centres the glyph in its circle — the
+            // original, sharing an HStack with the title inside one ToolbarItem,
+            // made iOS size a single glass background around both and pushed the
+            // "+" 4pt off-centre.
             ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    showingNewSession = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-            if #available(iOS 26.0, *) {
-                ToolbarSpacer(.fixed, placement: .navigationBarLeading)
+                GlassCircleButton(
+                    icon: "plus",
+                    color: .brandOrange,
+                    action: { showingNewSession = true }
+                )
             }
         }
         .alert("New Session", isPresented: $showingNewSession) {
