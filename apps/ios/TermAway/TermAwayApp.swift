@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        ConnectionManager.registerNotificationCategories()
         return true
     }
 
@@ -81,6 +82,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let name = response.notification.request.content.userInfo["sessionName"] as? String
+
+        // A reply typed on the lock screen goes straight to the session; the
+        // app stays in the background. Complete only once it has been sent or
+        // parked, or iOS may suspend us mid-flight.
+        if let reply = response as? UNTextInputNotificationResponse,
+           response.actionIdentifier == ConnectionManager.replyActionIdentifier,
+           let name {
+            Task { @MainActor in
+                SharedState.connectionManager.deliverReply(
+                    reply.userText,
+                    to: name,
+                    completion: completionHandler
+                )
+            }
+            return
+        }
+
         // Complete only after we've handed the session off, so a
         // background-launched app isn't suspended before routing.
         Task { @MainActor in
