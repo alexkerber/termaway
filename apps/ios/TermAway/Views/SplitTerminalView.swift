@@ -154,6 +154,12 @@ struct PaneTerminalView: View {
             terminalView: $terminalView,
             onTap: onTap
         )
+        // Only the pane showing the searched session reacts.
+        .onReceive(NotificationCenter.default.publisher(for: .scrollToSearchMatch)) { note in
+            guard note.userInfo?["session"] as? String == sessionName,
+                  let proportion = note.userInfo?["proportion"] as? Double else { return }
+            terminalView?.scrollToSearchMatch(proportion: proportion)
+        }
     }
 }
 

@@ -494,7 +494,7 @@ struct TerminalDetailView: View {
                                         }
                                         let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
                                         let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
-                                        searchManager.updateSearchableText(from: buffer)
+                                        searchManager.updateSearchableText(from: buffer, session: sessionName)
                                     }
                                 )
                                 GlassCircleButton(
@@ -544,7 +544,7 @@ struct TerminalDetailView: View {
                             showSearch = true
                             let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
                             let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
-                            searchManager.updateSearchableText(from: buffer)
+                            searchManager.updateSearchableText(from: buffer, session: sessionName)
                         }
                     }
                 }
@@ -802,7 +802,7 @@ struct SessionCompactView: View {
                                             showSearch = true
                                         }
                                         let buffer = connectionManager.getSessionOutputBuffer(for: currentSession.name)
-                                        searchManager.updateSearchableText(from: buffer)
+                                        searchManager.updateSearchableText(from: buffer, session: currentSession.name)
                                     }
                                 )
                                 GlassCircleButton(
@@ -852,7 +852,7 @@ struct SessionCompactView: View {
                             showSearch = true
                             if let session = connectionManager.currentSession {
                                 let buffer = connectionManager.getSessionOutputBuffer(for: session.name)
-                                searchManager.updateSearchableText(from: buffer)
+                                searchManager.updateSearchableText(from: buffer, session: session.name)
                             }
                         }
                     }
