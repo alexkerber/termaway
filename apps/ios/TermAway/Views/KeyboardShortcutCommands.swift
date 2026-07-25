@@ -28,7 +28,7 @@ struct KeyboardShortcutCommands: Commands {
     var body: some Commands {
         // Replace the default "New" command group
         CommandGroup(replacing: .newItem) {
-            Button("New Window") {
+            Button("New Session") {
                 shortcutState.createSessionRequested = true
             }
             .keyboardShortcut("t", modifiers: .command)
@@ -37,7 +37,7 @@ struct KeyboardShortcutCommands: Commands {
 
         // Session commands
         CommandGroup(after: .newItem) {
-            Button("Close Window") {
+            Button("Close Session") {
                 shortcutState.killSessionRequested = true
             }
             .keyboardShortcut("w", modifiers: .command)
@@ -47,7 +47,7 @@ struct KeyboardShortcutCommands: Commands {
 
             // Cmd+1 through Cmd+9: Switch to session by index
             ForEach(1...9, id: \.self) { index in
-                Button("Switch to Window \(index)") {
+                Button("Switch to Session \(index)") {
                     shortcutState.switchToSessionIndex = index
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
@@ -198,7 +198,7 @@ struct KeyboardShortcutHandler: ViewModifier {
         let newPanesNeeded = max(0, neededPaneCount - currentPaneCount)
 
         let baseSessionName = splitPaneManager.focusedSessionName
-            ?? connectionManager.currentSession?.name ?? "Window"
+            ?? connectionManager.currentSession?.name ?? "Session"
 
         var newSessionNames: [String] = []
         for i in 0..<newPanesNeeded {

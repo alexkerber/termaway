@@ -127,7 +127,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    LabeledContent("Windows") {
+                    LabeledContent("Sessions") {
                         Text("\(connectionManager.sessions.count)")
                             .contentTransition(.numericText())
                     }
