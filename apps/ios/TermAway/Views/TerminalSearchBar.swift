@@ -224,8 +224,24 @@ struct InlineSearchField: View {
 }
 
 // MARK: - Dismiss Search Notification
+extension TerminalView {
+    /// Scroll so that a match `proportion` of the way through the session's
+    /// output is on screen.
+    ///
+    /// ponytail: proportional, not exact — it assumes the output buffer maps
+    /// linearly onto the scrollback. Good enough to land on the right screenful;
+    /// mapping through SwiftTerm's buffer coordinates would be exact.
+    func scrollToSearchMatch(proportion: Double) {
+        let maxOffset = max(0, contentSize.height - bounds.height)
+        guard maxOffset > 0 else { return }
+        let y = max(0, min(CGFloat(proportion) * maxOffset, maxOffset))
+        setContentOffset(CGPoint(x: 0, y: y), animated: true)
+    }
+}
+
 extension Notification.Name {
     static let dismissTerminalSearch = Notification.Name("dismissTerminalSearch")
+    static let scrollToSearchMatch = Notification.Name("scrollToSearchMatch")
 }
 
 // MARK: - Terminal Search Manager
@@ -239,6 +255,13 @@ class TerminalSearchManager: ObservableObject {
     @Published var currentMatchIndex = 0
 
     private var searchableText = ""
+    /// Session whose terminal should follow the current match.
+    private var sessionName = ""
+    /// Character offsets of each match, and the length they were measured
+    /// against. Kept as plain integers: a String.Index belongs to the string it
+    /// came from, and the buffer is replaced on every output update.
+    private var matchOffsets: [Int] = []
+    private var searchableLength = 0
     /// Line offsets into searchableText (character index where each line starts)
     private var lineStartOffsets: [String.Index] = []
     private var searchWorkItem: DispatchWorkItem?
@@ -254,7 +277,8 @@ class TerminalSearchManager: ObservableObject {
     /// Extract searchable text from the session's output buffer in ConnectionManager.
     /// The output buffer accumulates all terminal output (including scrollback sent on attach).
     /// We strip ANSI escape codes to produce clean searchable text.
-    func updateSearchableText(from outputBuffer: String) {
+    func updateSearchableText(from outputBuffer: String, session: String) {
+        sessionName = session
         searchableText = Self.stripAnsiCodes(outputBuffer)
         performSearch()
     }
@@ -303,6 +327,7 @@ class TerminalSearchManager: ObservableObject {
 
         guard !searchQuery.isEmpty else {
             matches = []
+            matchOffsets = []
             currentMatchIndex = 0
             return
         }
@@ -315,19 +340,25 @@ class TerminalSearchManager: ObservableObject {
             let lowered = text.lowercased()
 
             var found: [Range<String.Index>] = []
+            var offsets: [Int] = []
             var searchStart = lowered.startIndex
 
             while searchStart < lowered.endIndex,
                   let range = lowered.range(of: query, range: searchStart..<lowered.endIndex) {
                 found.append(range.lowerBound..<range.upperBound)
+                offsets.append(lowered.distance(from: lowered.startIndex, to: range.lowerBound))
                 searchStart = range.upperBound
             }
+            let length = lowered.count
 
             Task { @MainActor in
                 self.matches = found
+                self.matchOffsets = offsets
+                self.searchableLength = length
                 if self.currentMatchIndex >= found.count {
                     self.currentMatchIndex = max(0, found.count - 1)
                 }
+                self.revealCurrentMatch()
             }
         }
 
@@ -339,43 +370,39 @@ class TerminalSearchManager: ObservableObject {
     func nextMatch() {
         guard !matches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex + 1) % matches.count
+        revealCurrentMatch()
     }
 
     /// Navigate to the previous match
     func previousMatch() {
         guard !matches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex - 1 + matches.count) % matches.count
+        revealCurrentMatch()
     }
 
-    /// Scroll the terminal to show the current match.
-    /// Uses a proportional approach: the match's position in the text maps to a position
-    /// in the terminal's scrollable content.
-    func scrollToCurrentMatch(in terminalView: TerminalView?) {
-        guard let terminalView = terminalView,
-              !matches.isEmpty,
-              currentMatchIndex < matches.count,
-              !searchableText.isEmpty else { return }
+    /// Ask the terminal showing this session to bring the current match into
+    /// view. The manager has no reference to a TerminalView — the views own
+    /// theirs — so this goes out as a notification, the same way search
+    /// dismissal already reaches them.
+    private func revealCurrentMatch() {
+        guard currentMatchIndex < matchOffsets.count,
+              searchableLength > 0,
+              !sessionName.isEmpty else { return }
 
-        let match = matches[currentMatchIndex]
+        let proportion = Double(matchOffsets[currentMatchIndex]) / Double(searchableLength)
 
-        // Calculate the proportional position of the match in the full text
-        let matchPosition = searchableText.distance(from: searchableText.startIndex, to: match.lowerBound)
-        let totalLength = searchableText.count
-        let proportion = CGFloat(matchPosition) / CGFloat(totalLength)
-
-        // Map that proportion to the terminal's scroll content
-        let contentHeight = terminalView.contentSize.height
-        let frameHeight = terminalView.bounds.height
-        let maxOffset = max(0, contentHeight - frameHeight)
-        let targetOffset = proportion * maxOffset
-        let clampedOffset = max(0, min(targetOffset, maxOffset))
-
-        terminalView.setContentOffset(CGPoint(x: 0, y: clampedOffset), animated: true)
+        NotificationCenter.default.post(
+            name: .scrollToSearchMatch,
+            object: nil,
+            userInfo: ["session": sessionName, "proportion": proportion]
+        )
     }
 
     func reset() {
         searchQuery = ""
         matches = []
+        matchOffsets = []
+        searchableLength = 0
         currentMatchIndex = 0
         searchableText = ""
         lineStartOffsets = []
