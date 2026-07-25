@@ -130,7 +130,41 @@ try {
   assert.equal(restarted.adoptTmuxSessions(), 1);
   assert.ok(restarted.exists("api"), "surviving session must be adopted");
 
+  // --- a failed reattach must not look like an exit -----------------------
+  // We can't reach the session, but tmux still has it. Announcing "exited"
+  // would make clients throw away state for a session that is running.
+  const spawn = restarted._spawnPty.bind(restarted);
+  const lost = spy(restarted.get("api"));
+  restarted.get("api").lastSpawnAt = 0; // past the respawn-loop guard
+  restarted._spawnPty = () => {
+    throw new Error("simulated spawn failure");
+  };
+  restarted.get("api").pty.kill();
+  await sleep(800);
+  restarted._spawnPty = spawn;
+  assert.ok(!restarted.exists("api"), "an unreachable session leaves the list");
+  assert.deepEqual(
+    lost.map((m) => m.type).filter((t) => t === "exited"),
+    [],
+    "a session tmux still holds must not be reported as exited",
+  );
+  await expectSessions(["api"], "the tmux session itself must survive");
+
+  // --- a failed create must not orphan a tmux session ---------------------
+  // new-session succeeds before the PTY is spawned, so a spawn failure would
+  // otherwise leave a session nothing references — adopted on the next start.
+  restarted._spawnPty = () => {
+    throw new Error("simulated spawn failure");
+  };
+  assert.throws(() => restarted.create("orphan"), /simulated spawn failure/);
+  restarted._spawnPty = spawn;
+  await expectSessions(
+    ["api"],
+    "a failed create must clean up its tmux session",
+  );
+
   // --- explicit kill really kills ----------------------------------------
+  restarted.adoptTmuxSessions();
   restarted.kill("api");
   await expectSessions([], "explicit kill must end the tmux session");
 

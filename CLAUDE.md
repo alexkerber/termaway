@@ -71,15 +71,9 @@ Four things have to stay true, and each has a case in
   identical to a shell exiting; `_reattach()` checks `has-session` and spawns a
   new client instead of reporting the session gone.
 
-The tmux session is created up front, detached and synchronously
-(`new-session -d`), and the PTY only runs `attach-session`. Letting the PTY
-create it with `new-session -A` left a window where the session did not exist
-yet: an immediate kill or rename would miss, tmux would finish creating it
-afterwards, and the orphan would be adopted on the next start. For the same
-reason adoption is attach-only. Commands that change tmux state throw rather
-than return null, so state and events only change after tmux agrees — and
-`_tmuxAlive()` separates "no such session" (exit 1) from "tmux could not be
-asked", which must not be read as a dead session.
+The session is created detached and synchronously; adoption is attach-only; and
+tmux commands that change state throw rather than return null, so nothing is
+mutated before tmux agrees. The reasons are on those lines in the code.
 
 Two details that are easy to get wrong: tmux accepts a `.` in a session name but
 reads it as a window separator in a target, so names are percent-encoded

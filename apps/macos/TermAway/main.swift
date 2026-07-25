@@ -941,12 +941,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
     /// Absolute paths first, like the server does: a GUI app inherits a minimal
     /// PATH that usually misses Homebrew.
     func findTmux() -> String? {
-        let candidates = [
+        // Same list and same override as the server's findTmux(), so the toggle
+        // can't refuse a tmux the server would happily have used.
+        var candidates = [
             "/opt/homebrew/bin/tmux",
             "/usr/local/bin/tmux",
             "/usr/bin/tmux",
             "/opt/local/bin/tmux",
         ]
+        if let override = ProcessInfo.processInfo.environment["TERMAWAY_TMUX_BIN"] {
+            candidates = [override]
+        }
         return candidates.first(where: {
             FileManager.default.isExecutableFile(atPath: $0)
         })
@@ -1000,8 +1005,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             alert.addButton(withTitle: "Cancel")
             switch alert.runModal() {
             case .alertFirstButtonReturn:
-                if let bin = findTmux() {
-                    _ = runCLI(bin: bin, args: ["-L", "termaway-\(port)", "kill-server"])
+                // If they can't actually be stopped, turning persistence off
+                // would hide them instead — keep it on and say so.
+                guard let bin = findTmux(),
+                      runCLI(bin: bin, args: ["-L", "termaway-\(port)", "kill-server"]) != nil
+                else {
+                    let failed = NSAlert()
+                    failed.messageText = "Couldn't stop the sessions"
+                    failed.informativeText = "tmux didn't respond, so persistence stays on. Try again, or run: tmux -L termaway-\(port) kill-server"
+                    failed.alertStyle = .warning
+                    failed.addButton(withTitle: "OK")
+                    failed.runModal()
+                    return true
                 }
             case .alertThirdButtonReturn:
                 return true  // cancelled — persistence stays on

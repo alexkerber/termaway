@@ -36,10 +36,26 @@ const TMUX_PATHS = [
   "/opt/local/bin/tmux",
 ];
 
-// Deliberately not a PATH lookup: the macOS app checks the same list before it
-// lets you turn persistence on, and two different answers to "is tmux here"
-// would mean the toggle refusing something the server could have run.
-const findTmux = () => TMUX_PATHS.find((p) => fs.existsSync(p)) ?? null;
+const isExecutable = (p) => {
+  try {
+    fs.accessSync(p, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// No PATH lookup: the macOS app checks the same four paths before it lets you
+// turn persistence on, and a second answer to "is tmux here" would mean the
+// toggle refusing something the server could have run. TERMAWAY_TMUX_BIN is the
+// escape hatch for installs that live elsewhere (Nix, a local build) — it only
+// applies where there is no toggle to disagree with, since an app launched from
+// Finder never sees a shell's environment anyway.
+function findTmux() {
+  const override = process.env.TERMAWAY_TMUX_BIN;
+  if (override) return isExecutable(override) ? override : null;
+  return TMUX_PATHS.find(isExecutable) ?? null;
+}
 
 // tmux reads "." and ":" in a target as window/pane separators, so a session
 // named "my.app" is creatable but not addressable ("can't find window: my").
@@ -155,7 +171,8 @@ class SessionManager {
       } else {
         console.error(
           "TERMAWAY_TMUX=1 but tmux was not found — sessions will NOT survive a " +
-            "restart. Install it with: brew install tmux",
+            "restart. Install tmux with your package manager, or point " +
+            "TERMAWAY_TMUX_BIN at it, and restart TermAway.",
         );
       }
     }
@@ -182,9 +199,9 @@ class SessionManager {
         timeout: 3000,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      return { ok: true, stdout, status: 0 };
+      return { ok: true, stdout };
     } catch (err) {
-      return { ok: false, stdout: "", status: err.status ?? null, error: err };
+      return { ok: false, status: err.status ?? null, error: err };
     }
   }
 
@@ -292,7 +309,15 @@ class SessionManager {
     // finish creating it — orphaning a session that gets adopted on next start.
     if (tmuxName) this._tmux("new-session", "-d", "-s", tmuxName);
 
-    const session = this._register(name, tmuxName, ephemeral);
+    let session;
+    try {
+      session = this._register(name, tmuxName, ephemeral);
+    } catch (err) {
+      // The tmux session exists but nothing references it — clean it up rather
+      // than leave an orphan for the next start to adopt.
+      if (tmuxName) this._tmuxResult("kill-session", "-t", `=${tmuxName}`);
+      throw err;
+    }
     console.log(`Created ${ephemeral ? "ephemeral " : ""}session "${name}"`);
     return session;
   }
@@ -679,8 +704,14 @@ class SessionManager {
     try {
       session.pty = this._spawnPty(session.tmuxName);
     } catch (err) {
-      console.error(`Failed to reattach "${session.name}": ${err.message}`);
-      return false;
+      // tmux still has the session, we just can't reach it right now. Drop it
+      // from the list quietly: reporting an exit would make clients discard
+      // state for a session that is running, and the next start re-adopts it.
+      console.error(
+        `Failed to reattach "${session.name}", leaving it to tmux: ${err.message}`,
+      );
+      this.sessions.delete(session.name);
+      return true;
     }
     session.lastSpawnAt = Date.now();
     this._setupHandlers(session);
