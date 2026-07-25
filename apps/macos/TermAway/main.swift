@@ -88,8 +88,12 @@ class UpdateChecker {
         alert.addButton(withTitle: "Later")
 
         if alert.runModal() == .alertFirstButtonReturn {
-            // Find macOS zip asset or fall back to release page
-            if let asset = release.assets.first(where: { $0.name.contains("macOS") && $0.name.hasSuffix(".zip") }),
+            // Releases ship a DMG; the zip suffix is only still matched so an
+            // older release stays reachable. Without the DMG case this fell
+            // through to the releases page on every real update.
+            let macAsset = release.assets.first(where: { $0.name.contains("macOS") && $0.name.hasSuffix(".dmg") })
+                ?? release.assets.first(where: { $0.name.contains("macOS") })
+            if let asset = macAsset,
                let downloadURL = URL(string: asset.browser_download_url) {
                 NSWorkspace.shared.open(downloadURL)
             } else if let releaseURL = URL(string: release.html_url) {
