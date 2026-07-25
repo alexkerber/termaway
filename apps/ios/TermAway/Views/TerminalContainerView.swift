@@ -87,6 +87,11 @@ struct TerminalContainerView: View {
                 terminalView?.becomeFirstResponder()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .scrollToSearchMatch)) { note in
+            guard note.userInfo?["session"] as? String == session.name,
+                  let proportion = note.userInfo?["proportion"] as? Double else { return }
+            terminalView?.scrollToSearchMatch(proportion: proportion)
+        }
     }
 
     @ViewBuilder
