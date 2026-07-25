@@ -232,7 +232,7 @@ app.use(
 // Serve xterm.js from node_modules
 app.use(
   "/xterm",
-  express.static(path.join(__dirname, "..", "node_modules", "xterm")),
+  express.static(path.join(__dirname, "..", "node_modules", "@xterm", "xterm")),
 );
 app.use(
   "/xterm-addon-fit",

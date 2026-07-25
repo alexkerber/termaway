@@ -182,6 +182,8 @@ When creating a new release:
    - `apps/macos/TermAway/Info.plist` - CFBundleShortVersionString and CFBundleVersion
    - `apps/ios/TermAway.xcodeproj/project.pbxproj` - MARKETING_VERSION and CURRENT_PROJECT_VERSION
      (both appear twice, Debug and Release; bump in the Xcode target settings to hit both)
+   - `package.json` - version (it silently drifted three releases behind before this
+     line existed)
 
    Only the marketing versions need to match across the apps
    (CFBundleShortVersionString ↔ MARKETING_VERSION). Build numbers are independent and
