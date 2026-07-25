@@ -36,22 +36,10 @@ const TMUX_PATHS = [
   "/opt/local/bin/tmux",
 ];
 
-function findTmux() {
-  const override = process.env.TERMAWAY_TMUX_BIN;
-  if (override) return fs.existsSync(override) ? override : null;
-  for (const p of TMUX_PATHS) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    return execFileSync("command", ["-v", "tmux"], {
-      shell: true,
-      encoding: "utf8",
-      timeout: 2000,
-    }).trim();
-  } catch {
-    return null;
-  }
-}
+// Deliberately not a PATH lookup: the macOS app checks the same list before it
+// lets you turn persistence on, and two different answers to "is tmux here"
+// would mean the toggle refusing something the server could have run.
+const findTmux = () => TMUX_PATHS.find((p) => fs.existsSync(p)) ?? null;
 
 // tmux reads "." and ":" in a target as window/pane separators, so a session
 // named "my.app" is creatable but not addressable ("can't find window: my").
@@ -166,8 +154,8 @@ class SessionManager {
         );
       } else {
         console.error(
-          "TERMAWAY_TMUX=1 but no tmux binary found — sessions will NOT survive a restart. " +
-            "Install tmux or set TERMAWAY_TMUX_BIN to its path.",
+          "TERMAWAY_TMUX=1 but tmux was not found — sessions will NOT survive a " +
+            "restart. Install it with: brew install tmux",
         );
       }
     }
