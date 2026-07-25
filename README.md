@@ -1,5 +1,7 @@
 # TermAway
 
+[![CI](https://github.com/alexkerber/termaway/actions/workflows/ci.yml/badge.svg)](https://github.com/alexkerber/termaway/actions/workflows/ci.yml)
+
 **Your Mac terminal, on your iPad.**
 
 TermAway is a self-hosted terminal for iPhone, iPad and the browser. A menu bar app on your Mac runs a small Node server; a native SwiftTerm client connects over your Wi-Fi or through Tailscale. No cloud, no account, no tracking — your terminal never leaves your network.
