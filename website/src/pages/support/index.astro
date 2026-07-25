@@ -53,7 +53,28 @@ import Footer from '../../components/Footer.astro';
                     Because your terminal is now reachable across your tailnet, <strong>set a password</strong> in the menu bar app so only you can connect.
                 </p>
 
+                <h2>Keep sessions running when the server stops</h2>
+                <p>
+                    By default a session lives inside the TermAway server: stop the server, or restart your Mac, and the shells inside it end. Turn on persistence and each session runs inside <a href="https://github.com/tmux/tmux" target="_blank">tmux</a> instead, so your work keeps running and TermAway reattaches to it the next time it starts.
+                </p>
+                <ol>
+                    <li><strong>Install tmux</strong> on your Mac — <code>brew install tmux</code>. TermAway won't let you turn persistence on without it.</li>
+                    <li><strong>Open Preferences</strong> in the menu bar app, go to <strong>Server</strong>, and switch on <strong>Keep sessions running when the server stops</strong>. The server restarts by itself.</li>
+                    <li><strong>That's it.</strong> Stop the server, start it again, and your sessions are back with whatever was running still running.</li>
+                </ol>
+                <p>
+                    One thing to expect: TermAway replays a session's recent output when you reconnect, and that buffer lives in the server, so it starts empty after a restart. Your processes and tmux's own history survive — you reattach to a live screen, not to a log of what happened before.
+                </p>
+                <p>
+                    Switching persistence back off asks what to do with sessions tmux is still holding, so nothing is left running where you can't see it.
+                </p>
+
                 <h2>Frequently Asked Questions</h2>
+
+                <h3>Do my sessions survive restarting the server?</h3>
+                <p>
+                    Only if you ask them to. Turn on <strong>Keep sessions running when the server stops</strong> in Preferences → Server and each session runs inside tmux, so stopping the server — or rebooting — leaves your work running. It needs tmux installed. See the section above.
+                </p>
 
                 <h3>Do I need an internet connection?</h3>
                 <p>
