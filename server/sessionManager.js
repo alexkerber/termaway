@@ -1,5 +1,7 @@
 import pty from "node-pty";
 import os from "os";
+import { execFileSync } from "child_process";
+import fs from "fs";
 
 // =============================================================================
 // Configuration
@@ -10,6 +12,57 @@ const CONFIG = {
   defaultRows: 24,
   maxScrollback: 2_000_000, // ~2MB of scrollback per session
 };
+
+// =============================================================================
+// tmux persistence (opt-in via TERMAWAY_TMUX=1)
+// =============================================================================
+//
+// With tmux mode on, a session's PTY runs a tmux *client* attached to a tmux
+// session instead of the login shell directly. The shell then belongs to the
+// tmux server, so it survives this process exiting: restart TermAway (or the
+// Mac) and `adoptTmuxSessions()` reattaches to everything still running.
+//
+// TermAway's own replay buffer is in-memory and still resets on restart. What
+// survives is the processes and tmux's own history — attaching repaints the
+// current screen.
+
+// Absolute paths first: a server launched from Finder or a LaunchAgent gets a
+// minimal PATH that usually misses Homebrew, and a PATH lookup can also find a
+// wrapper rather than tmux itself.
+const TMUX_PATHS = [
+  "/opt/homebrew/bin/tmux",
+  "/usr/local/bin/tmux",
+  "/usr/bin/tmux",
+  "/opt/local/bin/tmux",
+];
+
+const isExecutable = (p) => {
+  try {
+    fs.accessSync(p, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// No PATH lookup: the macOS app checks the same four paths before it lets you
+// turn persistence on, and a second answer to "is tmux here" would mean the
+// toggle refusing something the server could have run. TERMAWAY_TMUX_BIN is the
+// escape hatch for installs that live elsewhere (Nix, a local build) — it only
+// applies where there is no toggle to disagree with, since an app launched from
+// Finder never sees a shell's environment anyway.
+function findTmux() {
+  const override = process.env.TERMAWAY_TMUX_BIN;
+  if (override) return isExecutable(override) ? override : null;
+  return TMUX_PATHS.find(isExecutable) ?? null;
+}
+
+// tmux reads "." and ":" in a target as window/pane separators, so a session
+// named "my.app" is creatable but not addressable ("can't find window: my").
+// Percent-encode the dot; "%" is rejected by the session-name validator, so the
+// mapping stays unambiguous in both directions.
+const toTmuxName = (name) => name.replaceAll(".", "%2E");
+const fromTmuxName = (name) => name.replaceAll("%2E", ".");
 
 // Verbose per-message/per-resize logging is gated behind a debug flag so a
 // production server doesn't spam its logs on every output chunk. Enable with
@@ -46,6 +99,12 @@ class Session {
     // off-box (bound to 0.0.0.0/* or a real interface, not loopback). Populated
     // by the periodic scan in index.js so clients can offer preview links.
     this.ports = [];
+    // tmux session this PTY is a client of, or null for a plain shell.
+    this.tmuxName = null;
+    // Set while an explicit kill is in flight so the PTY's exit isn't mistaken
+    // for a detached client and reattached.
+    this.killing = false;
+    this.lastSpawnAt = 0;
   }
 
   // Store output in scrollback buffer
@@ -90,24 +149,124 @@ class Session {
 // =============================================================================
 
 class SessionManager {
-  constructor() {
+  constructor({ port = 0 } = {}) {
     this.sessions = new Map();
     this.clipboard = "";
+    // Set by index.js before shutdown so tmux sessions are left running.
+    this.shuttingDown = false;
     // onAttentionChange is set by index.js to fan out attention changes.
+
+    this.tmux = null;
+    if (process.env.TERMAWAY_TMUX === "1") {
+      const bin = findTmux();
+      if (bin) {
+        // A private socket keeps TermAway out of the user's own tmux server, so
+        // their ~/.tmux.conf (visual-bell, exit-unattached, …) and their own
+        // sessions can't change how TermAway behaves. -f /dev/null does the
+        // same for the config.
+        this.tmux = { bin, socket: `termaway-${port}` };
+        console.log(
+          `tmux persistence enabled (${bin}, socket ${this.tmux.socket})`,
+        );
+      } else {
+        console.error(
+          "TERMAWAY_TMUX=1 but tmux was not found — sessions will NOT survive a " +
+            "restart. Install tmux with your package manager, or point " +
+            "TERMAWAY_TMUX_BIN at it, and restart TermAway.",
+        );
+      }
+    }
     debug("Session manager ready (PTY mode)");
+  }
+
+  // ---------------------------------------------------------------------------
+  // tmux helpers
+  // ---------------------------------------------------------------------------
+
+  // Argument prefix for any tmux invocation, so callers can't forget the socket.
+  tmuxArgs(...args) {
+    return ["-L", this.tmux.socket, "-f", "/dev/null", ...args];
+  }
+
+  // Run a tmux command and report how it went. `status` is tmux's own exit code
+  // and `error` is set when tmux could not be run at all (missing binary,
+  // timeout) — the two must stay distinguishable, because "tmux did not answer"
+  // is not the same as "the session is gone".
+  _tmuxResult(...args) {
+    try {
+      const stdout = execFileSync(this.tmux.bin, this.tmuxArgs(...args), {
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { ok: true, stdout };
+    } catch (err) {
+      return { ok: false, status: err.status ?? null, error: err };
+    }
+  }
+
+  // For commands that change tmux state. These must never fail quietly: a
+  // swallowed kill-session leaves a session running that TermAway has already
+  // forgotten, and a swallowed rename makes the old name come back on restart.
+  _tmux(...args) {
+    const result = this._tmuxResult(...args);
+    if (!result.ok) {
+      const detail =
+        String(result.error?.stderr || "").trim() ||
+        result.error?.message ||
+        `exit ${result.status}`;
+      throw new Error(`tmux ${args[0]} failed: ${detail}`);
+    }
+    return result.stdout;
+  }
+
+  // true, false, or null when tmux itself could not be asked. A transient
+  // failure must not be read as "the session died".
+  _tmuxAlive(tmuxName) {
+    const result = this._tmuxResult("has-session", "-t", `=${tmuxName}`);
+    if (result.ok) return true;
+    return result.status === 1 ? false : null;
+  }
+
+  // Reattach to every tmux session left behind by a previous run. Attach only —
+  // creating here could resurrect a session that was killed between listing and
+  // attaching.
+  adoptTmuxSessions() {
+    if (!this.tmux) return 0;
+    const listed = this._tmuxResult("list-sessions", "-F", "#{session_name}");
+    if (!listed.ok) return 0; // no server running yet — nothing to adopt
+    let adopted = 0;
+    for (const line of listed.stdout.split("\n")) {
+      const tmuxName = line.trim();
+      if (!tmuxName) continue;
+      const name = fromTmuxName(tmuxName);
+      if (this.sessions.has(name)) continue;
+      try {
+        this._register(name, tmuxName, false);
+        adopted++;
+      } catch (err) {
+        console.error(`Failed to adopt tmux session "${name}": ${err.message}`);
+      }
+    }
+    if (adopted)
+      console.log(`Adopted ${adopted} tmux session(s) from a previous run`);
+    return adopted;
   }
 
   // ---------------------------------------------------------------------------
   // Session Lifecycle
   // ---------------------------------------------------------------------------
 
-  create(name, ephemeral = false) {
-    if (this.sessions.has(name)) {
-      throw new Error(`Session "${name}" already exists`);
-    }
+  // Spawn the PTY backing a session: a tmux client when the session is
+  // persistent, the login shell otherwise.
+  _spawnPty(tmuxName) {
+    const [file, args] = tmuxName
+      ? // Attach only. The session is created up front by create(), so this
+        // never has to decide whether one should exist.
+        [this.tmux.bin, this.tmuxArgs("attach-session", "-t", `=${tmuxName}`)]
+      : [process.env.SHELL || "/bin/bash", ["-l"]];
 
-    const shell = process.env.SHELL || "/bin/bash";
-    const ptyProcess = pty.spawn(shell, ["-l"], {
+    return pty.spawn(file, args, {
       name: "xterm-256color",
       cols: CONFIG.defaultCols,
       rows: CONFIG.defaultRows,
@@ -122,11 +281,43 @@ class SessionManager {
         PROMPT_EOL_MARK: "",
       },
     });
+  }
 
-    const session = new Session(name, ptyProcess, ephemeral);
+  // Wire a Session around a freshly spawned PTY. Shared by create() and by
+  // adoption, which must not create anything.
+  _register(name, tmuxName, ephemeral) {
+    const session = new Session(name, this._spawnPty(tmuxName), ephemeral);
+    session.tmuxName = tmuxName;
+    session.lastSpawnAt = Date.now();
     this.sessions.set(name, session);
     this._setupHandlers(session);
+    return session;
+  }
 
+  create(name, ephemeral = false) {
+    if (this.sessions.has(name)) {
+      throw new Error(`Session "${name}" already exists`);
+    }
+
+    // Ephemeral split-pane sessions stay plain shells: they're hidden from the
+    // session list and auto-killed on detach, so persisting one would leave an
+    // invisible tmux session nobody can reach.
+    const tmuxName = this.tmux && !ephemeral ? toTmuxName(name) : null;
+    // Create the tmux session up front and synchronously. Letting the PTY do it
+    // with `new-session -A` leaves a window where the session does not exist
+    // yet: an immediate kill or rename would silently miss, and tmux would then
+    // finish creating it — orphaning a session that gets adopted on next start.
+    if (tmuxName) this._tmux("new-session", "-d", "-s", tmuxName);
+
+    let session;
+    try {
+      session = this._register(name, tmuxName, ephemeral);
+    } catch (err) {
+      // The tmux session exists but nothing references it — clean it up rather
+      // than leave an orphan for the next start to adopt.
+      if (tmuxName) this._tmuxResult("kill-session", "-t", `=${tmuxName}`);
+      throw err;
+    }
     console.log(`Created ${ephemeral ? "ephemeral " : ""}session "${name}"`);
     return session;
   }
@@ -137,8 +328,24 @@ class SessionManager {
       throw new Error(`Session "${name}" not found`);
     }
 
+    // Killing the PTY only disconnects the tmux client — the session and its
+    // processes keep running. An explicit kill has to end the tmux session too,
+    // or it comes back on the next restart. Shutdown is the opposite case: leave
+    // the tmux session alone so the next run can adopt it.
+    // This runs before any state changes so a failure leaves the session intact
+    // rather than dropping it from the list while it is still running.
+    if (session.tmuxName && !this.shuttingDown) {
+      this._tmux("kill-session", "-t", `=${session.tmuxName}`);
+    }
+
+    session.killing = true;
     session.pty.kill();
-    session.broadcast({ type: "killed", name });
+    // Shutting down is not a kill: the sessions are still there (tmux) or the
+    // whole server is going away (plain shells). Telling clients they were
+    // killed makes them drop local state — iOS discards the composer draft.
+    if (!this.shuttingDown) {
+      session.broadcast({ type: "killed", name });
+    }
     this.sessions.delete(name);
 
     console.log(`Killed session "${name}"`);
@@ -151,6 +358,13 @@ class SessionManager {
     }
     if (this.sessions.has(newName)) {
       throw new Error(`Session "${newName}" already exists`);
+    }
+
+    // Rename the tmux session too, or the old name reappears after a restart.
+    if (session.tmuxName) {
+      const next = toTmuxName(newName);
+      this._tmux("rename-session", "-t", `=${session.tmuxName}`, next);
+      session.tmuxName = next;
     }
 
     session.name = newName;
@@ -415,7 +629,7 @@ class SessionManager {
       scrollbackLength: session.scrollback.length,
       needsAttention: session.needsAttention,
       ports: session.ports,
-      isTmux: false,
+      isTmux: session.tmuxName !== null,
       isConnected: true,
     };
   }
@@ -452,6 +666,16 @@ class SessionManager {
     });
 
     session.pty.onExit(({ exitCode, signal }) => {
+      // An explicit kill has already told clients, and a shutdown deliberately
+      // leaves tmux sessions running. Reporting an exit in either case makes
+      // clients discard state for a session that is fine.
+      if (session.killing || this.shuttingDown) return;
+
+      // For a tmux-backed session the PTY is only the client. It also exits on
+      // `tmux detach` (Ctrl-b d) or if the client is killed, while the session
+      // itself keeps running — reattach instead of reporting it as gone.
+      if (this._reattach(session)) return;
+
       console.log(
         `Session "${session.name}" exited (code ${exitCode}, signal ${signal})`,
       );
@@ -463,6 +687,36 @@ class SessionManager {
       });
       this.sessions.delete(session.name);
     });
+  }
+
+  // Replace the PTY of a tmux-backed session whose client went away but whose
+  // tmux session is still alive. Returns true if the session was kept.
+  _reattach(session) {
+    if (!session.tmuxName || session.killing || this.shuttingDown) return false;
+    // A client that dies immediately after spawning means something is wrong
+    // with tmux itself; let the session go rather than respawn in a tight loop.
+    if (Date.now() - session.lastSpawnAt < 1000) return false;
+    // Only a definite "no such session" ends the session. If tmux could not be
+    // asked, assume it is still there and let the spawn below be the real test.
+    if (this._tmuxAlive(session.tmuxName) === false) return false;
+
+    console.log(`Reattaching tmux session "${session.name}"`);
+    try {
+      session.pty = this._spawnPty(session.tmuxName);
+    } catch (err) {
+      // tmux still has the session, we just can't reach it right now. Drop it
+      // from the list quietly: reporting an exit would make clients discard
+      // state for a session that is running, and the next start re-adopts it.
+      console.error(
+        `Failed to reattach "${session.name}", leaving it to tmux: ${err.message}`,
+      );
+      this.sessions.delete(session.name);
+      return true;
+    }
+    session.lastSpawnAt = Date.now();
+    this._setupHandlers(session);
+    session.pty.resize(session.lastCols, session.lastRows);
+    return true;
   }
 }
 

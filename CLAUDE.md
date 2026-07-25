@@ -50,6 +50,55 @@ This is a web-based terminal application that provides remote terminal access ov
   - A set of attached WebSocket clients
   - Sessions persist until explicitly killed or the shell exits
 
+#### tmux persistence (opt-in)
+
+With `TERMAWAY_TMUX=1` (the macOS app's "Keep sessions running when the server
+stops" preference), a session's PTY runs a tmux _client_ instead of the login
+shell, so the shell belongs to the tmux server and outlives this process.
+`adoptTmuxSessions()` reattaches to everything still running at startup.
+
+Four things have to stay true, and each has a case in
+`server/sessionManager.tmux.test.js`:
+
+- **Shutdown must not kill tmux sessions.** `shutdown()` walks every session
+  through `kill()`; the `shuttingDown` flag makes it disconnect the client and
+  leave the session running. Getting this wrong silently defeats the feature.
+  It also has to stay quiet — iOS discards the composer draft on both `killed`
+  and `exited`, so announcing either would lose work for a live session.
+- **An explicit kill must end the tmux session**, or it returns on next start.
+- **Rename must rename the tmux session**, or the old name returns.
+- **A PTY exit is not a dead session.** `tmux detach` and a killed client look
+  identical to a shell exiting; `_reattach()` checks `has-session` and spawns a
+  new client instead of reporting the session gone.
+
+The session is created detached and synchronously; adoption is attach-only; and
+tmux commands that change state throw rather than return null, so nothing is
+mutated before tmux agrees. The reasons are on those lines in the code.
+
+#### Agents talking to each other
+
+A side effect worth knowing: because each named session *is* a tmux session on a
+shared private socket, tmux sets `$TMUX` inside it, so plain tmux commands reach
+the right server with no socket flag and no TermAway API:
+
+```bash
+tmux list-sessions -F '#{session_name}'          # who else is running
+tmux display -p '#{session_name}'                # who am I
+tmux capture-pane -p -t '=codex:' | tail -30     # read their screen
+tmux send-keys -t '=codex:' 'your message' Enter # write to them
+```
+
+`=name:` is an exact match, so `claude` won't also hit `claude-2`. This only
+works between *named* sessions — split panes are ephemeral and deliberately not
+tmux-backed, so they are not on the socket and can't be addressed.
+
+Two details that are easy to get wrong: tmux accepts a `.` in a session name but
+reads it as a window separator in a target, so names are percent-encoded
+(`app.web` → `app%2Eweb`); and in tmux mode the port scanner has to root at the
+panes' PIDs, because the shell is a child of the tmux server rather than of the
+client PTY. Ephemeral split panes stay plain shells. TermAway's own replay buffer
+is in memory and still resets — what survives is the processes and tmux history.
+
 ### iOS App (SwiftUI + SwiftTerm)
 
 - **apps/ios/**: Native iOS/iPadOS client using SwiftTerm for terminal emulation
