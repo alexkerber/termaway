@@ -83,7 +83,12 @@ const MAX_OSC_CARRY = 4096;
 
 function parseOscNotification(code, payload) {
   if (code === "9") {
-    return payload ? { title: "", body: payload } : null;
+    // OSC 9 is multiplexed: iTerm2 sends progress as `9;4;state;percent` and
+    // ConEmu uses `9;<digit>;…` for several other things. Only the plain
+    // `9;message` form is a notification — without this, a build with a
+    // progress bar raises an alert on every tick.
+    if (!payload || /^\d;/.test(payload)) return null;
+    return { title: "", body: payload };
   }
   // 777 addresses several kinds of thing; only "notify" concerns us.
   const parts = payload.split(";");

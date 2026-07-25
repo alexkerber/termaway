@@ -60,6 +60,17 @@ s = session("c");
 out = feed(s, `\x1b]777;notify;Deploy;staging;then production${BEL}`);
 assert.equal(out[0].body, "staging;then production");
 
+// --- OSC 9 is multiplexed: sub-commands are not notifications ---------------
+// iTerm2 sends progress as 9;4;state;percent, ConEmu uses 9;<digit>; for other
+// things. Treating those as messages meant an alert on every progress tick.
+s = session("p");
+assert.deepEqual(feed(s, `\x1b]9;4;1;50${BEL}`), [], "iTerm2 progress must be ignored");
+assert.deepEqual(feed(s, `\x1b]9;1;something${BEL}`), [], "ConEmu 9;1 must be ignored");
+assert.deepEqual(feed(s, `\x1b]9;${BEL}`), [], "an empty message is not a notification");
+// A real message that merely starts with a digit still works.
+out = feed(s, `\x1b]9;3 tests failed${BEL}`);
+assert.equal(out[0].body, "3 tests failed");
+
 // --- ST terminator, not just BEL --------------------------------------------
 s = session("d");
 out = feed(s, `\x1b]9;Done${ST}`);
