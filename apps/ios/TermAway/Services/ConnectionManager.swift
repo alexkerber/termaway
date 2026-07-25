@@ -813,8 +813,14 @@ class ConnectionManager: ObservableObject {
     ///
     /// The app may be suspended, so this can involve connecting and
     /// authenticating first, and iOS only allows seconds for it. If that
-    /// doesn't finish in time the reply is kept as the session's composer
-    /// draft and the user is told — it must never disappear silently.
+    /// doesn't finish in time the reply is kept as the session's composer draft
+    /// and the user is told.
+    ///
+    /// Best effort, deliberately: "reachable" means the socket looked
+    /// authenticated when we wrote to it. There is no ack correlating an input
+    /// with its result, so a disconnect mid-send, or a session killed between
+    /// the notification and the reply, is still lost. Adding that ack is a
+    /// protocol change worth doing only if it turns out to matter.
     func deliverReply(_ text: String, to sessionName: String, completion: @escaping () -> Void) {
         // A reply is one line the user wants entered. Anything they managed to
         // paste in with newlines is flattened rather than executed line by line.
@@ -826,19 +832,20 @@ class ConnectionManager: ObservableObject {
         guard !line.isEmpty else { completion(); return }
 
         var finished = false
-        let finish: (Bool) -> Void = { [weak self] delivered in
+        let finish: (Bool) -> Void = { [weak self] reachable in
             guard !finished else { return }
             finished = true
-            if delivered {
-                self?.sendInput(line + "\n", to: sessionName)
+            if reachable, let self {
+                // The server rejects input on a session this socket isn't
+                // attached to, and after a cold launch nothing is. Messages are
+                // processed in order on one socket, so attaching here is enough
+                // — the same assumption createPaneSession already makes.
+                self.attachToSession(sessionName)
+                // CR, not LF: in raw mode LF is Ctrl-J and a TUI agent won't
+                // read it as Return. This is what the composer sends.
+                self.sendInput(line + "\r", to: sessionName)
             } else {
-                // Park it where the user will find it, and say so.
-                self?.saveDraft(line, for: sessionName)
-                self?.showNotification(
-                    title: "Couldn't reach your Mac",
-                    body: "Your reply is waiting in \(sessionName).",
-                    sessionName: sessionName
-                )
+                self?.parkReply(line, for: sessionName)
             }
             completion()
         }
@@ -848,30 +855,47 @@ class ConnectionManager: ObservableObject {
             return
         }
 
-        // Not connected: try, but don't outlive the window iOS gives us.
-        // A second reply while one is still waiting must not orphan the first —
-        // iOS requires every completion handler to be called.
+        // Not connected: try, but don't outlive the window iOS gives us. Each
+        // attempt owns its timer by token — without that, an earlier timer
+        // firing would clear a *later* reply's waiter and strand its handler,
+        // which iOS requires to be called exactly once.
         if let stranded = replyWaiter {
             replyWaiter = nil
-            stranded(false)
+            stranded.finish(false)
         }
-        replyWaiter = finish
+        let token = UUID()
+        replyWaiter = (token: token, finish: finish)
         connect()
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
-            guard let self, self.replyWaiter != nil else { return }
+            guard let self, self.replyWaiter?.token == token else { return }
             self.replyWaiter = nil
             finish(false)
         }
     }
 
-    /// Set while a notification reply is waiting for the connection to come up.
-    private var replyWaiter: ((Bool) -> Void)?
+    /// Keep a reply the user typed but we couldn't send, where they'll find it.
+    /// Appended rather than assigned: replacing would throw away whatever they
+    /// had already written in that session's composer.
+    private func parkReply(_ line: String, for sessionName: String) {
+        let existing = loadDraft(for: sessionName)
+        let merged = existing.isEmpty ? line : existing + "\n" + line
+        saveDraft(merged, for: sessionName)
+        showNotification(
+            title: "Couldn't reach your Mac",
+            body: "Your reply is waiting in \(sessionName).",
+            sessionName: sessionName
+        )
+    }
+
+    /// The reply waiting for the connection to come up, and the token that says
+    /// which attempt owns it.
+    private var replyWaiter: (token: UUID, finish: (Bool) -> Void)?
 
     /// Called once the socket is authenticated, so a waiting reply can go out.
     func flushPendingReply() {
         guard let waiter = replyWaiter else { return }
         replyWaiter = nil
-        waiter(true)
+        waiter.finish(true)
     }
 
     // MARK: - Composer Drafts (per session, persisted)
