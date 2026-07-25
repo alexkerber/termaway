@@ -150,7 +150,7 @@ const server = tlsOptions
 const wss = new WebSocketServer({ server });
 
 // Initialize session manager
-const sessionManager = new SessionManager();
+const sessionManager = new SessionManager({ port: PORT });
 
 // Fan out attention changes: an `attention` event drives a local notification
 // on clients, and a refreshed session list keeps the badge in sync. Passive
@@ -1010,6 +1010,62 @@ let portScanInterval = null;
 let portScanBusy = false;
 
 /**
+ * PIDs to walk when mapping listening ports to a session.
+ *
+ * Normally that is the session's own PTY. In tmux mode it is not: the PTY runs
+ * a tmux *client*, and the shell — with any dev server under it — is a child of
+ * the tmux server instead, so the client's subtree is empty. Every pane of the
+ * session is a root in that case. Ephemeral split panes stay plain shells and
+ * keep using their PTY.
+ */
+function getPortScanRoots(cb) {
+  const roots = new Map();
+  const addPty = (session) => {
+    if (session.pty?.pid) roots.set(session.name, [session.pty.pid]);
+  };
+
+  if (!sessionManager.tmux) {
+    for (const session of sessionManager.sessions.values()) addPty(session);
+    cb(roots);
+    return;
+  }
+
+  execFile(
+    sessionManager.tmux.bin,
+    sessionManager.tmuxArgs(
+      "list-panes",
+      "-a",
+      "-F",
+      "#{session_name}\t#{pane_pid}",
+    ),
+    { timeout: 3000 },
+    (err, out) => {
+      const panesByTmuxName = new Map();
+      // Session names may contain spaces, so split on the tab we asked for.
+      if (!err) {
+        for (const line of out.split("\n")) {
+          const tab = line.indexOf("\t");
+          if (tab < 0) continue;
+          const pid = parseInt(line.slice(tab + 1), 10);
+          if (!pid) continue;
+          const key = line.slice(0, tab);
+          if (!panesByTmuxName.has(key)) panesByTmuxName.set(key, []);
+          panesByTmuxName.get(key).push(pid);
+        }
+      }
+      for (const session of sessionManager.sessions.values()) {
+        const panes = session.tmuxName
+          ? panesByTmuxName.get(session.tmuxName)
+          : null;
+        if (panes) roots.set(session.name, panes);
+        else addPty(session);
+      }
+      cb(roots);
+    },
+  );
+}
+
+/**
  * Map off-box-reachable listening TCP ports to each session's process tree and
  * broadcast the session list when they change. Loopback-only ports (bound to
  * 127.0.0.0/8 or ::1) are skipped — they aren't reachable from other devices.
@@ -1021,6 +1077,7 @@ function scanListeningPorts() {
   if (getConnectedClientCount() === 0) return;
   portScanBusy = true;
 
+  getPortScanRoots((rootsByName) => {
   execFile(
     "lsof",
     ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"],
@@ -1085,11 +1142,11 @@ function scanListeningPorts() {
 
           let changed = false;
           for (const session of sessionManager.sessions.values()) {
-            const root = session.pty?.pid;
-            if (!root) continue;
-            // Walk the pty's whole process subtree collecting listening ports.
+            const roots = rootsByName.get(session.name);
+            if (!roots || roots.length === 0) continue;
+            // Walk each root's whole process subtree collecting listening ports.
             const ports = new Set();
-            const stack = [root];
+            const stack = [...roots];
             const seen = new Set();
             while (stack.length) {
               const pid = stack.pop();
@@ -1115,6 +1172,7 @@ function scanListeningPorts() {
       );
     },
   );
+  });
 }
 
 // Initialize Bonjour/mDNS
@@ -1174,6 +1232,9 @@ server.listen(PORT, HOST, () => {
   console.log("");
   console.log("Press Ctrl+C to stop the server");
 
+  // Reattach to sessions that outlived the previous run (tmux mode only).
+  if (sessionManager.adoptTmuxSessions() > 0) broadcastSessionList();
+
   // Begin scanning for dev-server ports to surface in the session list.
   scanListeningPorts();
   portScanInterval = setInterval(scanListeningPorts, PORT_SCAN_INTERVAL);
@@ -1192,6 +1253,10 @@ function shutdown() {
     bonjourService.stop();
   }
   bonjour.destroy();
+
+  // Stopping the server is not "kill my sessions": with tmux persistence the
+  // flag makes kill() disconnect the client and leave the tmux session running.
+  sessionManager.shuttingDown = true;
 
   // Kill all sessions
   for (const name of sessionManager.list()) {

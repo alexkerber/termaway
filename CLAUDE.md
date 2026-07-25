@@ -50,6 +50,32 @@ This is a web-based terminal application that provides remote terminal access ov
   - A set of attached WebSocket clients
   - Sessions persist until explicitly killed or the shell exits
 
+#### tmux persistence (opt-in)
+
+With `TERMAWAY_TMUX=1` (the macOS app's "Keep sessions running when the server
+stops" preference), a session's PTY runs a tmux _client_ instead of the login
+shell, so the shell belongs to the tmux server and outlives this process.
+`adoptTmuxSessions()` reattaches to everything still running at startup.
+
+Four things have to stay true, and each has a case in
+`server/sessionManager.tmux.test.js`:
+
+- **Shutdown must not kill tmux sessions.** `shutdown()` walks every session
+  through `kill()`; the `shuttingDown` flag makes it disconnect the client and
+  leave the session running. Getting this wrong silently defeats the feature.
+- **An explicit kill must end the tmux session**, or it returns on next start.
+- **Rename must rename the tmux session**, or the old name returns.
+- **A PTY exit is not a dead session.** `tmux detach` and a killed client look
+  identical to a shell exiting; `_reattach()` checks `has-session` and spawns a
+  new client instead of reporting the session gone.
+
+Two details that are easy to get wrong: tmux accepts a `.` in a session name but
+reads it as a window separator in a target, so names are percent-encoded
+(`app.web` → `app%2Eweb`); and in tmux mode the port scanner has to root at the
+panes' PIDs, because the shell is a child of the tmux server rather than of the
+client PTY. Ephemeral split panes stay plain shells. TermAway's own replay buffer
+is in memory and still resets — what survives is the processes and tmux history.
+
 ### iOS App (SwiftUI + SwiftTerm)
 
 - **apps/ios/**: Native iOS/iPadOS client using SwiftTerm for terminal emulation

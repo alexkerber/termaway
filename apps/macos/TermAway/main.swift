@@ -233,6 +233,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         }
     }
 
+    /// Run sessions inside tmux so they survive the server stopping. Opt-in:
+    /// it needs tmux installed, and it changes where the shell actually lives.
+    var persistSessions: Bool {
+        get {
+            return UserDefaults.standard.bool(forKey: "persistSessions")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "persistSessions")
+        }
+    }
+
     var serverPassword: String {
         get {
             return KeychainHelper.load() ?? ""
@@ -492,7 +503,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
             args.append(serverPassword)
         }
         serverProcess?.arguments = args
-        serverProcess?.environment = ProcessInfo.processInfo.environment
+        var env = ProcessInfo.processInfo.environment
+        if persistSessions {
+            env["TERMAWAY_TMUX"] = "1"
+        }
+        serverProcess?.environment = env
         serverProcess?.standardOutput = FileHandle.nullDevice
         serverProcess?.standardError = FileHandle.nullDevice
 
@@ -1400,6 +1415,19 @@ struct PreferencesView: View {
 
             SectionDivider()
 
+            SectionHeader(title: "Sessions")
+
+            Toggle(isOn: $viewModel.persistSessions) {
+                SettingRow("Keep sessions running when the server stops", description: "Runs each session in tmux, so your work survives a restart. Requires tmux.")
+            }
+            .toggleStyle(.checkbox)
+            .onChange(of: viewModel.persistSessions) { newValue in
+                viewModel.appDelegate.persistSessions = newValue
+                viewModel.appDelegate.restartServer()
+            }
+
+            SectionDivider()
+
             SectionHeader(title: "Security")
 
             Toggle(isOn: $viewModel.requirePassword) {
@@ -1528,6 +1556,7 @@ class PreferencesViewModel: ObservableObject {
     @Published var displayMode: DisplayMode
     @Published var preventSleep: Bool
     @Published var requirePassword: Bool
+    @Published var persistSessions: Bool
     @Published var serverPassword: String
     @Published var launchAtLogin: Bool
     @Published var connectionNotifications: Bool
@@ -1540,6 +1569,7 @@ class PreferencesViewModel: ObservableObject {
         self.displayMode = appDelegate.displayMode
         self.preventSleep = appDelegate.preventSleep
         self.requirePassword = appDelegate.requirePassword
+        self.persistSessions = appDelegate.persistSessions
         self.serverPassword = appDelegate.serverPassword
         self.launchAtLogin = appDelegate.launchAtLogin
         self.connectionNotifications = appDelegate.connectionNotifications
