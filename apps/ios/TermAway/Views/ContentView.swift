@@ -427,6 +427,24 @@ struct TerminalDetailView: View {
         themeManager.chromeIconColor
     }
 
+    /// What the top bar calls the thing you are looking at.
+    ///
+    /// Naming the focused pane's own session made the title flip between
+    /// "StarDust" and "StarDust-2" as you tapped between panes, which reads as
+    /// switching session when nothing switched. The session you opened stays,
+    /// and the pane shows as a position within it.
+    private var splitPaneTitle: String {
+        let base = connectionManager.currentSession?.name
+            ?? splitPaneManager.focusedSessionName
+            ?? ""
+        let panes = splitPaneManager.panes
+        guard panes.count > 1,
+              let focused = splitPaneManager.focusedSessionName,
+              let index = panes.firstIndex(where: { $0.sessionName == focused })
+        else { return base }
+        return "\(base) · \(index + 1)/\(panes.count)"
+    }
+
     var body: some View {
         ZStack {
             Color(uiColor: themeManager.currentTheme.backgroundColor).ignoresSafeArea()
@@ -465,7 +483,7 @@ struct TerminalDetailView: View {
                                     action: { showingNewSession = true }
                                 )
                                 Button(action: { showingSessionList = true }) {
-                                    Text(splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? "")
+                                    Text(splitPaneTitle)
                                         .font(.headline)
                                         .foregroundColor(iconColor)
                                         .lineLimit(1)
