@@ -57,6 +57,42 @@ function findTmux() {
   return TMUX_PATHS.find(isExecutable) ?? null;
 }
 
+// =============================================================================
+// OSC notifications
+// =============================================================================
+//
+// Terminals converged on two escape sequences for "tell the user something",
+// and agent CLIs, ntfy hooks and tmux hooks already speak one of them:
+//
+//   OSC 9   ESC ] 9 ; message                  BEL | ST
+//   OSC 777 ESC ] 777 ; notify ; title ; body  BEL | ST
+//
+// A payload can contain neither BEL nor ESC, which is what makes matching them
+// with one regex safe.
+const OSC_NOTIFICATION = /\x1b\](9|777);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+
+// Any OSC, notification or not. BEL is a valid OSC terminator, so a shell that
+// sets the window title on every prompt emits one constantly — those must not
+// be read as the program ringing for attention.
+const ANY_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
+// A sequence can straddle two PTY reads, so an unterminated tail is carried to
+// the next chunk. Bounded: something that opens an OSC and never closes it must
+// not be able to grow memory.
+const MAX_OSC_CARRY = 4096;
+
+function parseOscNotification(code, payload) {
+  if (code === "9") {
+    return payload ? { title: "", body: payload } : null;
+  }
+  // 777 addresses several kinds of thing; only "notify" concerns us.
+  const parts = payload.split(";");
+  if (parts[0] !== "notify") return null;
+  const title = parts[1] ?? "";
+  const body = parts.slice(2).join(";");
+  return title || body ? { title, body } : null;
+}
+
 // tmux reads "." and ":" in a target as window/pane separators, so a session
 // named "my.app" is creatable but not addressable ("can't find window: my").
 // Percent-encode the dot; "%" is rejected by the session-name validator, so the
@@ -105,6 +141,8 @@ class Session {
     // for a detached client and reattached.
     this.killing = false;
     this.lastSpawnAt = 0;
+    // Tail of an OSC sequence that hasn't been terminated yet.
+    this.oscCarry = "";
   }
 
   // Store output in scrollback buffer
@@ -653,10 +691,22 @@ class SessionManager {
   _setupHandlers(session) {
     session.pty.onData((data) => {
       session.pushScrollback(data);
-      // Passive attention: a terminal bell (BEL, \x07) means "look at me".
-      // Claude Code, Codex, OpenCode and most CLIs ring it on notifications,
-      // permission prompts and task completion — zero config, any tool.
-      if (data.includes("\x07")) {
+      // Attention, in order of how much the program told us.
+      //
+      // An OSC notification carries a real message, so it is treated like the
+      // explicit /api/notify hook rather than a bell. Checking it first also
+      // keeps its own terminating BEL from firing a second, blank alert.
+      const { notification, bell } = this._scanAttention(session, data);
+      if (notification) {
+        this.markAttention(session.name, {
+          source: "notify",
+          title: notification.title || session.name,
+          body: notification.body,
+        });
+      } else if (bell) {
+        // A bare bell means "look at me" with nothing else to say. Claude Code,
+        // Codex, OpenCode and most CLIs ring it on notifications, permission
+        // prompts and task completion — zero config, any tool.
         this.markAttention(session.name, { source: "bell" });
       }
       // Include session name so clients can route to correct pane
@@ -687,6 +737,37 @@ class SessionManager {
       });
       this.sessions.delete(session.name);
     });
+  }
+
+  // What this chunk of output is asking for: `notification` when the program
+  // sent an OSC 9/777 (the last one, since attention is a single flag and the
+  // newest message is the useful one), and `bell` when a BEL appears outside
+  // any escape sequence.
+  _scanAttention(session, data) {
+    const buf = session.oscCarry + data;
+
+    let latest = null;
+    OSC_NOTIFICATION.lastIndex = 0;
+    let match;
+    while ((match = OSC_NOTIFICATION.exec(buf)) !== null) {
+      latest = parseOscNotification(match[1], match[2]) ?? latest;
+    }
+
+    // Everything left once complete sequences are removed. A BEL in here is the
+    // program ringing; one that merely terminated an OSC is not.
+    const plain = buf.replace(ANY_OSC, "");
+
+    // Whatever opens a sequence without closing it may finish in the next read.
+    // A read can also end between the ESC and the "]", so a trailing lone ESC
+    // has to be kept too.
+    const opened = plain.lastIndexOf("\x1b]");
+    let carry = "";
+    if (opened !== -1) carry = plain.slice(opened);
+    else if (plain.endsWith("\x1b")) carry = "\x1b";
+    session.oscCarry = carry.length > MAX_OSC_CARRY ? "" : carry;
+
+    const settled = plain.slice(0, plain.length - carry.length);
+    return { notification: latest, bell: settled.includes("\x07") };
   }
 
   // Replace the PTY of a tmux-backed session whose client went away but whose

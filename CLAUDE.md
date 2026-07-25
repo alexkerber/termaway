@@ -74,6 +74,28 @@ The session is created detached and synchronously; adoption is attach-only; and
 tmux commands that change state throw rather than return null, so nothing is
 mutated before tmux agrees. The reasons are on those lines in the code.
 
+#### Attention: bells and OSC notifications
+
+`_scanAttention()` reads two things out of the PTY stream:
+
+- **OSC 9** (`ESC ] 9 ; message`) and **OSC 777** (`ESC ] 777 ; notify ; title ; body`),
+  the convention WezTerm, iTerm2, Kitty and ntfy hooks already speak. These raise
+  attention with `source: "notify"`, like the `/api/notify` hook, because they carry
+  a real message.
+- A **bare BEL**, which means "look at me" with nothing else to say.
+
+Two things make this more than a substring match. A sequence can be split across
+PTY reads — including between the ESC and the `]` — so an unterminated tail is
+carried to the next chunk, bounded so an unclosed sequence can't grow memory. And
+BEL is itself a valid OSC terminator, so a shell that sets its window title on
+every prompt used to ring the bell constantly; the bell check now runs against the
+stream with complete escape sequences removed.
+
+**tmux swallows OSC 9 and 777.** Verified against real tmux, with and without
+`allow-passthrough`, and with the DCS wrapper — none reach the client. So rich
+notifications only work with persistence off. BEL does pass through tmux, so plain
+attention works in both modes.
+
 #### Agents talking to each other
 
 A side effect worth knowing: because each named session *is* a tmux session on a
