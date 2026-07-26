@@ -13,6 +13,10 @@ const CONFIG = {
   maxScrollback: 2_000_000, // ~2MB of scrollback per session
 };
 
+// How long after a resize to hold the next one, so two clients with different
+// window sizes can't ping-pong the PTY between them.
+const RESIZE_COOLDOWN = 100;
+
 // =============================================================================
 // tmux persistence (opt-in via TERMAWAY_TMUX=1)
 // =============================================================================
@@ -69,8 +73,7 @@ function findTmux() {
 //
 // A payload can contain neither BEL nor ESC, which is what makes matching them
 // with one regex safe.
-const OSC_NOTIFICATION =
-  /\x1b\](9|777);([^\x07\x1b\x18\x1a]*)(?:\x07|\x1b\\)/g;
+const OSC_NOTIFICATION = /\x1b\](9|777);([^\x07\x1b\x18\x1a]*)(?:\x07|\x1b\\)/g;
 
 // Any OSC, notification or not. BEL is a valid OSC terminator, so a shell that
 // sets the window title on every prompt emits one constantly — those must not
@@ -145,6 +148,8 @@ class Session {
     this.lastCols = CONFIG.defaultCols;
     this.lastRows = CONFIG.defaultRows;
     this.lastResizeAt = 0;
+    // Timer holding the last resize of a burst until the cooldown expires.
+    this.pendingResize = null;
     // Track each client's terminal size for multi-client scenarios
     this.clientSizes = new WeakMap();
     // Ephemeral sessions don't show in the session list (used for split panes)
@@ -399,6 +404,7 @@ class SessionManager {
     }
 
     session.killing = true;
+    clearTimeout(session.pendingResize);
     session.pty.kill();
     // Shutting down is not a kill: the sessions are still there (tmux) or the
     // whole server is going away (plain shells). Telling clients they were
@@ -541,8 +547,16 @@ class SessionManager {
     }
   }
 
-  // Recalculate PTY size based on remaining clients
+  // Recalculate PTY size based on remaining clients. Also what a deferred
+  // resize runs when its cooldown expires, so it supersedes any pending one.
   _recalculateSize(session) {
+    clearTimeout(session.pendingResize);
+    session.pendingResize = null;
+    // A deferred resize outlives the session by up to the cooldown, and every
+    // way a session goes — killed, shell exited, reattach gave up — drops it
+    // from the map without touching the timer. rename() updates session.name
+    // before it moves the entry, so this still recognises a renamed session.
+    if (this.sessions.get(session.name) !== session) return;
     if (session.clients.size === 0) return;
 
     let minCols = Infinity;
@@ -559,14 +573,21 @@ class SessionManager {
     // If we found valid sizes and they differ from current, resize
     if (minCols !== Infinity && minRows !== Infinity) {
       if (minCols !== session.lastCols || minRows !== session.lastRows) {
-        session.lastCols = minCols;
-        session.lastRows = minRows;
-        session.pty.resize(minCols, minRows);
+        this._applySize(session, minCols, minRows);
         console.log(
           `Recalculated "${session.name}" to ${minCols}x${minRows} (${session.clients.size} clients)`,
         );
       }
     }
+  }
+
+  // The one place the PTY's size changes, so lastResizeAt can't drift out of
+  // step with it and let the next burst through the cooldown.
+  _applySize(session, cols, rows) {
+    session.lastCols = cols;
+    session.lastRows = rows;
+    session.lastResizeAt = Date.now();
+    session.pty.resize(cols, rows);
   }
 
   // ---------------------------------------------------------------------------
@@ -642,18 +663,28 @@ class SessionManager {
       return;
     }
 
-    // Resize cooldown: ignore resizes within 100ms of last resize
-    // This prevents "resize fights" when multiple clients connect
+    // Resize cooldown, to stop two clients fighting over the size. It has to
+    // coalesce the burst rather than drop it: a rotation emits several sizes in
+    // a few milliseconds, and dropping the last one leaves the PTY on an
+    // intermediate width while the client renders at the final one. Nothing
+    // retries, so the shell then wraps every prompt at the wrong column until
+    // some later resize happens to miss the window.
     const now = Date.now();
-    if (now - session.lastResizeAt < 100) {
-      debug(`Ignoring rapid resize for "${name}": ${minCols}x${minRows}`);
+    const wait = session.lastResizeAt + RESIZE_COOLDOWN - now;
+    if (wait > 0) {
+      // The size is already in clientSizes, so the deferred work is only
+      // "recompute the minimum once the window closes". Capturing this call's
+      // size instead would go stale the moment a client resizes again, leaves,
+      // or resizes back to the size already applied — each of which would then
+      // hand the PTY a width nobody asked for.
+      session.pendingResize ??= setTimeout(() => {
+        session.pendingResize = null;
+        this._recalculateSize(session);
+      }, wait);
       return;
     }
 
-    session.lastCols = minCols;
-    session.lastRows = minRows;
-    session.lastResizeAt = now;
-    session.pty.resize(minCols, minRows);
+    this._applySize(session, minCols, minRows);
     debug(
       `Resized "${name}" to ${minCols}x${minRows} (min of ${session.clients.size} clients)`,
     );
