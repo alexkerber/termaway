@@ -216,22 +216,7 @@ struct SessionSidebarView: View {
             }
         }
         .navigationTitle("Sessions")
-        .toolbar {
-            // GlassCircleButton rather than a bare toolbar Button: with a
-            // navigationTitle set, the sidebar's bar renders its buttons plain,
-            // which left this "+" looking unlike the identical one in the detail
-            // bar. Our own component also centres the glyph in its circle — the
-            // original, sharing an HStack with the title inside one ToolbarItem,
-            // made iOS size a single glass background around both and pushed the
-            // "+" 4pt off-centre.
-            ToolbarItem(placement: .navigationBarLeading) {
-                GlassCircleButton(
-                    icon: "plus",
-                    color: .brandOrange,
-                    action: { showingNewSession = true }
-                )
-            }
-        }
+        .toolbar { newSessionToolbarItem }
         .alert("New Session", isPresented: $showingNewSession) {
             TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
@@ -247,6 +232,34 @@ struct SessionSidebarView: View {
                 }
             }
         }
+    }
+
+    // GlassCircleButton rather than a bare toolbar Button: with a navigationTitle
+    // set, the sidebar's bar renders its buttons plain, which left this "+" looking
+    // unlike the identical one in the detail bar. Our own component also centres the
+    // glyph in its circle — the original, sharing an HStack with the title inside one
+    // ToolbarItem, made iOS size a single glass background around both and pushed the
+    // "+" 4pt off-centre.
+    @ToolbarContentBuilder
+    private var newSessionToolbarItem: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            // The button brings its own glass, and iOS 26 puts every toolbar item on
+            // a shared glass background as well — which drew the "+" inside two
+            // concentric rings. Hide the system's and keep ours, so this button and
+            // the identical one in the detail bar stay the same shape.
+            ToolbarItem(placement: .navigationBarLeading) { newSessionButton }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .navigationBarLeading) { newSessionButton }
+        }
+    }
+
+    private var newSessionButton: some View {
+        GlassCircleButton(
+            icon: "plus",
+            color: .brandOrange,
+            action: { showingNewSession = true }
+        )
     }
 }
 
@@ -415,7 +428,6 @@ struct TerminalDetailView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var showingSettings = false
     @State private var showingNewSession = false
-    @State private var showingSessionList = false
     @State private var showingSplitMenu = false
     @State private var showingKillConfirmation = false
     @State private var newSessionName = ""
@@ -474,7 +486,14 @@ struct TerminalDetailView: View {
                             .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
                         } else {
                             // Left section (equal width so the center label is
-                            // screen-centered): + and session name
+                            // screen-centered): + and session name. The name and the
+                            // connection status both reveal the sidebar: this view
+                            // hides its navigation bar to make room for this bar,
+                            // which takes the split view's own sidebar toggle with
+                            // it, so without them an attached session had no way
+                            // back. The sheet that used to list sessions here was
+                            // the sidebar's own content in a second window — the
+                            // iPhone still needs it, the iPad has the real one.
                             HStack(spacing: 10) {
                                 GlassCircleButton(
                                     icon: "plus",
@@ -482,7 +501,9 @@ struct TerminalDetailView: View {
                                     lightMode: themeManager.isChromeLightMode,
                                     action: { showingNewSession = true }
                                 )
-                                Button(action: { showingSessionList = true }) {
+                                Button {
+                                    withAnimation { columnVisibility = .all }
+                                } label: {
                                     Text(splitPaneTitle)
                                         .font(.headline)
                                         .foregroundColor(iconColor)
@@ -494,8 +515,10 @@ struct TerminalDetailView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Center: connection status as a plain label
-                            Button(action: { showingSessionList = true }) {
+                            // Center: connection status, the other way to the sidebar.
+                            Button {
+                                withAnimation { columnVisibility = .all }
+                            } label: {
                                 ConnectionStatusLabel(isConnected: connectionManager.isConnected)
                             }
                             .buttonStyle(.plain)
@@ -586,13 +609,6 @@ struct TerminalDetailView: View {
                     }
                 }
             }
-        }
-        .sheet(isPresented: $showingSessionList) {
-            SessionListSheet()
-                .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
-                .presentationCornerRadius(20)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()

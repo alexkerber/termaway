@@ -178,19 +178,21 @@ Server → Client:
 ```bash
 # Build for iPhone simulator
 xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' build
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Build for iPad simulator
 xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
-  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4),OS=18.6' build
+  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' build
 ```
+
+Device names go stale with each Xcode update and a wrong one fails before anything
+compiles, so `xcrun simctl list devices available` is the current truth, not this file.
 
 ### Reusable Components
 
 **Always check for existing components before creating new ones:**
 
 - `GlassCircleButton` - Circle button with liquid glass effect (iOS 26) or ultraThinMaterial fallback. Use for floating action buttons, icon buttons in overlays. Has built-in haptic feedback.
-- `GlassPillButton` - Pill-shaped glass button for status indicators
 - `ConnectionStatusLabel` - Green dot + connected/disconnected text (wrap in a Button for a tap action)
 
 Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
