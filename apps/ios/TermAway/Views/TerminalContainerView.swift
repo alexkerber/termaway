@@ -235,7 +235,7 @@ struct ShortcutsToolbarView: View {
         // Layout: compose toggle, then the shortcuts pill
         HStack(alignment: .center, spacing: 8) {
             composeToggle
-            shortcutsPill(fullWidth: true)
+            shortcutsPill
         }
         .padding(.horizontal, 16)
     }
@@ -307,9 +307,49 @@ struct ShortcutsToolbarView: View {
         )
     }
 
+    private var shortcutsPill: some View {
+        // Hug the shortcuts when they fit and scroll only when they don't. A
+        // horizontal ScrollView takes every point it is offered, which ran the
+        // pill the whole width of the screen with its keys bunched at one end.
+        ViewThatFits(in: .horizontal) {
+            shortcutsRow
+            ScrollView(.horizontal, showsIndicators: false) {
+                shortcutsRow
+            }
+            // The fade is a scroll affordance, so it belongs to this branch
+            // alone — dimming the first and last key when everything already
+            // fits reads as a rendering fault.
+            .mask(
+                HStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [.clear, .black],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 16)
+                    Rectangle().fill(.black)
+                    LinearGradient(
+                        colors: [.black, .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 16)
+                }
+            )
+        }
+        .frame(height: 44)
+        .modifier(
+            GlassPillModifier(
+                id: "pill",
+                namespace: toolbarNamespace,
+                iconColor: iconColor
+            )
+        )
+        .clipShape(Capsule())
+    }
+
     @ViewBuilder
-    private func shortcutsPill(fullWidth: Bool) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+    private var shortcutsRow: some View {
             HStack(spacing: 2) {
                 ForEach(shortcutsManager.toolbarShortcuts) { shortcut in
                     ShortcutKey(
@@ -345,33 +385,6 @@ struct ShortcutsToolbarView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
-        }
-        .frame(maxWidth: fullWidth ? .infinity : nil)
-        .frame(height: 44)
-        .mask(
-            HStack(spacing: 0) {
-                // Left fade
-                LinearGradient(
-                    colors: [.clear, .black],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 16)
-
-                // Full opacity middle
-                Rectangle().fill(.black)
-
-                // Right fade
-                LinearGradient(
-                    colors: [.black, .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 16)
-            }
-        )
-        .modifier(GlassPillModifier(id: "pill", namespace: toolbarNamespace, iconColor: iconColor))
-        .clipShape(Capsule())
     }
 
     private func handleShortcut(_ shortcut: Shortcut) {
