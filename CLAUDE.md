@@ -91,7 +91,7 @@ BEL is itself a valid OSC terminator, so a shell that sets its window title on
 every prompt used to ring the bell constantly; the bell check now runs against the
 stream with complete escape sequences removed.
 
-Because the bell check strips *every* complete OSC, a BEL-terminated sequence we
+Because the bell check strips _every_ complete OSC, a BEL-terminated sequence we
 don't parse — kitty's OSC 99, other OSC 1337 forms — no longer rings a generic
 bell the way it used to. That is right for window titles and wrong for a kitty
 user; add the code to `OSC_NOTIFICATION` if one shows up.
@@ -106,7 +106,7 @@ attention works in both modes.
 
 #### Agents talking to each other
 
-A side effect worth knowing: because each named session *is* a tmux session on a
+A side effect worth knowing: because each named session _is_ a tmux session on a
 shared private socket, tmux sets `$TMUX` inside it, so plain tmux commands reach
 the right server with no socket flag and no TermAway API:
 
@@ -118,7 +118,7 @@ tmux send-keys -t '=codex:' 'your message' Enter # write to them
 ```
 
 `=name:` is an exact match, so `claude` won't also hit `claude-2`. This only
-works between *named* sessions — split panes are ephemeral and deliberately not
+works between _named_ sessions — split panes are ephemeral and deliberately not
 tmux-backed, so they are not on the socket and can't be addressed.
 
 Two details that are easy to get wrong: tmux accepts a `.` in a session name but
@@ -218,6 +218,11 @@ When creating a new release:
    Only the marketing versions need to match across the apps
    (CFBundleShortVersionString ↔ MARKETING_VERSION). Build numbers are independent and
    only have to increase — macOS reuses the marketing version, iOS counts 1, 2, 3.
+
+   A change that only touches the server ships to macOS and Linux alone, and iOS stays
+   on its last released version rather than gaining one it never shipped: the wire
+   protocol is the compatibility boundary, not the version number. 1.5.2 was the first
+   of these. Say so in the release notes so the mismatch reads as deliberate.
 
 2. **Build and upload the iOS app:**
 
