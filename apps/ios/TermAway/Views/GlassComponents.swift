@@ -55,49 +55,6 @@ struct GlassCircleButton: View {
     }
 }
 
-// MARK: - Glass Pill Button (for text buttons like "Connected", "Settings")
-/// A pill-shaped button with iOS 26 liquid glass effect
-/// Use for: status indicators, text buttons in custom overlays
-struct GlassPillButton: View {
-    let action: () -> Void
-    var lightMode: Bool = false
-    let content: () -> AnyView
-
-    init<Content: View>(
-        lightMode: Bool = false,
-        action: @escaping () -> Void,
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.action = action
-        self.lightMode = lightMode
-        self.content = { AnyView(content()) }
-    }
-
-    var body: some View {
-        Button(action: {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
-        }) {
-            content()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-        }
-        .background {
-            if #available(iOS 26.0, *) {
-                ZStack {
-                    if lightMode {
-                        Capsule().fill(Color(.systemBackground))
-                    }
-                    Capsule().fill(.clear).glassEffect(.regular.interactive())
-                }
-            } else {
-                Capsule().fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, lightMode ? .light : .dark)
-            }
-        }
-    }
-}
-
 // MARK: - Glass Rounded Button (for larger buttons like "Settings" with icon)
 /// A rounded rectangle button with iOS 26 liquid glass effect
 /// Use for: larger action buttons, settings buttons
@@ -173,26 +130,6 @@ struct GlassSettingsButton: View {
             .foregroundColor(.secondary)
             .padding(.vertical, 12)
             .padding(.horizontal, 24)
-        }
-    }
-}
-
-// MARK: - Glass Effect Container Wrapper
-/// Wraps content in GlassEffectContainer on iOS 26, passes through on older versions
-struct AdaptiveGlassContainer<Content: View>: View {
-    let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer {
-                content
-            }
-        } else {
-            content
         }
     }
 }

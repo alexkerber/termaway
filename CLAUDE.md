@@ -193,7 +193,6 @@ compiles, so `xcrun simctl list devices available` is the current truth, not thi
 **Always check for existing components before creating new ones:**
 
 - `GlassCircleButton` - Circle button with liquid glass effect (iOS 26) or ultraThinMaterial fallback. Use for floating action buttons, icon buttons in overlays. Has built-in haptic feedback.
-- `GlassPillButton` - Pill-shaped glass button for status indicators
 - `ConnectionStatusLabel` - Green dot + connected/disconnected text (wrap in a Button for a tap action)
 
 Located in: `apps/ios/TermAway/Views/GlassComponents.swift`
