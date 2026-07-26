@@ -428,7 +428,6 @@ struct TerminalDetailView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var showingSettings = false
     @State private var showingNewSession = false
-    @State private var showingSessionList = false
     @State private var showingSplitMenu = false
     @State private var showingKillConfirmation = false
     @State private var newSessionName = ""
@@ -487,7 +486,14 @@ struct TerminalDetailView: View {
                             .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
                         } else {
                             // Left section (equal width so the center label is
-                            // screen-centered): + and session name
+                            // screen-centered): + and session name. The name and the
+                            // connection status both reveal the sidebar: this view
+                            // hides its navigation bar to make room for this bar,
+                            // which takes the split view's own sidebar toggle with
+                            // it, so without them an attached session had no way
+                            // back. The sheet that used to list sessions here was
+                            // the sidebar's own content in a second window — the
+                            // iPhone still needs it, the iPad has the real one.
                             HStack(spacing: 10) {
                                 GlassCircleButton(
                                     icon: "plus",
@@ -495,7 +501,9 @@ struct TerminalDetailView: View {
                                     lightMode: themeManager.isChromeLightMode,
                                     action: { showingNewSession = true }
                                 )
-                                Button(action: { showingSessionList = true }) {
+                                Button {
+                                    withAnimation { columnVisibility = .all }
+                                } label: {
                                     Text(splitPaneTitle)
                                         .font(.headline)
                                         .foregroundColor(iconColor)
@@ -507,11 +515,7 @@ struct TerminalDetailView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Center: connection status, and the way back to the
-                            // sidebar. This view hides its navigation bar to make
-                            // room for this bar, which takes the split view's own
-                            // sidebar toggle with it — so once a session is attached
-                            // there was otherwise no way to reveal the sidebar again.
+                            // Center: connection status, the other way to the sidebar.
                             Button {
                                 withAnimation { columnVisibility = .all }
                             } label: {
@@ -605,13 +609,6 @@ struct TerminalDetailView: View {
                     }
                 }
             }
-        }
-        .sheet(isPresented: $showingSessionList) {
-            SessionListSheet()
-                .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
-                .presentationCornerRadius(20)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
