@@ -216,22 +216,7 @@ struct SessionSidebarView: View {
             }
         }
         .navigationTitle("Sessions")
-        .toolbar {
-            // GlassCircleButton rather than a bare toolbar Button: with a
-            // navigationTitle set, the sidebar's bar renders its buttons plain,
-            // which left this "+" looking unlike the identical one in the detail
-            // bar. Our own component also centres the glyph in its circle — the
-            // original, sharing an HStack with the title inside one ToolbarItem,
-            // made iOS size a single glass background around both and pushed the
-            // "+" 4pt off-centre.
-            ToolbarItem(placement: .navigationBarLeading) {
-                GlassCircleButton(
-                    icon: "plus",
-                    color: .brandOrange,
-                    action: { showingNewSession = true }
-                )
-            }
-        }
+        .toolbar { newSessionToolbarItem }
         .alert("New Session", isPresented: $showingNewSession) {
             TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
@@ -247,6 +232,34 @@ struct SessionSidebarView: View {
                 }
             }
         }
+    }
+
+    // GlassCircleButton rather than a bare toolbar Button: with a navigationTitle
+    // set, the sidebar's bar renders its buttons plain, which left this "+" looking
+    // unlike the identical one in the detail bar. Our own component also centres the
+    // glyph in its circle — the original, sharing an HStack with the title inside one
+    // ToolbarItem, made iOS size a single glass background around both and pushed the
+    // "+" 4pt off-centre.
+    @ToolbarContentBuilder
+    private var newSessionToolbarItem: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            // The button brings its own glass, and iOS 26 puts every toolbar item on
+            // a shared glass background as well — which drew the "+" inside two
+            // concentric rings. Hide the system's and keep ours, so this button and
+            // the identical one in the detail bar stay the same shape.
+            ToolbarItem(placement: .navigationBarLeading) { newSessionButton }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .navigationBarLeading) { newSessionButton }
+        }
+    }
+
+    private var newSessionButton: some View {
+        GlassCircleButton(
+            icon: "plus",
+            color: .brandOrange,
+            action: { showingNewSession = true }
+        )
     }
 }
 
@@ -494,8 +507,14 @@ struct TerminalDetailView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Center: connection status as a plain label
-                            Button(action: { showingSessionList = true }) {
+                            // Center: connection status, and the way back to the
+                            // sidebar. This view hides its navigation bar to make
+                            // room for this bar, which takes the split view's own
+                            // sidebar toggle with it — so once a session is attached
+                            // there was otherwise no way to reveal the sidebar again.
+                            Button {
+                                withAnimation { columnVisibility = .all }
+                            } label: {
                                 ConnectionStatusLabel(isConnected: connectionManager.isConnected)
                             }
                             .buttonStyle(.plain)

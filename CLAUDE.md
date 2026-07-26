@@ -178,12 +178,15 @@ Server → Client:
 ```bash
 # Build for iPhone simulator
 xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.6' build
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Build for iPad simulator
 xcodebuild -project apps/ios/TermAway.xcodeproj -scheme TermAway \
-  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4),OS=18.6' build
+  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' build
 ```
+
+Device names go stale with each Xcode update and a wrong one fails before anything
+compiles, so `xcrun simctl list devices available` is the current truth, not this file.
 
 ### Reusable Components
 
