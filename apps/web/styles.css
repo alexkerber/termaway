@@ -223,6 +223,17 @@ body {
   transition: all 0.15s ease;
 }
 
+/* The icons are inlined Lucide shapes, stripped to their paths: everything
+   Lucide repeats on each root element is a CSS property, and the rules below
+   already override size and stroke width per context anyway. */
+svg.icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .header-btn svg {
   width: 16px;
   height: 16px;

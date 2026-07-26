@@ -376,11 +376,7 @@ function updateConnectionStatus(status) {
       break;
     case "connected":
       statusText.textContent = "Connected";
-      if (disconnectBtn) {
-        disconnectBtn.style.display = "inline-flex";
-        // Re-init Lucide for newly visible button
-        if (window.lucide) lucide.createIcons({ nodes: [disconnectBtn] });
-      }
+      if (disconnectBtn) disconnectBtn.style.display = "inline-flex";
       // Show toast only on reconnection (not first connect)
       if (reconnectAttempts > 0) {
         showToast("Reconnected", "success", 2000);

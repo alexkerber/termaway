@@ -11,9 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="/xterm/css/xterm.css">
-  <link rel="stylesheet" href="styles.css?v=11">
-  <!-- Lucide icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="styles.css?v=12">
   <!-- Apply theme immediately to prevent flash -->
   <script>
     (function() {
@@ -33,17 +31,17 @@
     <header id="header" role="banner">
       <div id="tabs-container">
         <div id="tabs" role="tablist" aria-label="Terminal sessions"></div>
-        <button id="new-session-btn" title="Create new session" aria-label="Create new session"><i data-lucide="plus"></i></button>
+        <button id="new-session-btn" title="Create new session" aria-label="Create new session"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></button>
       </div>
       <div id="status-container">
-        <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar" aria-label="Toggle keyboard toolbar" aria-pressed="false"><i data-lucide="keyboard"></i></button>
-        <button class="header-btn" id="theme-toggle-header" title="Toggle theme" aria-label="Toggle theme"><i data-lucide="sun-moon"></i></button>
-        <button class="header-btn" id="settings-btn-header" title="Settings" aria-label="Open settings"><i data-lucide="settings"></i></button>
+        <button class="header-btn" id="toolbar-toggle" title="Toggle keyboard toolbar" aria-label="Toggle keyboard toolbar" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 8h.01" /><path d="M12 12h.01" /><path d="M14 8h.01" /><path d="M16 12h.01" /><path d="M18 8h.01" /><path d="M6 8h.01" /><path d="M7 16h10" /><path d="M8 12h.01" /><rect width="20" height="16" x="2" y="4" rx="2" /></svg></button>
+        <button class="header-btn" id="theme-toggle-header" title="Toggle theme" aria-label="Toggle theme"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v2" /><path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715" /><path d="M16 12a4 4 0 0 0-4-4" /><path d="m19 5-1.256 1.256" /><path d="M20 12h2" /></svg></button>
+        <button class="header-btn" id="settings-btn-header" title="Settings" aria-label="Open settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /><circle cx="12" cy="12" r="3" /></svg></button>
         <span id="connection-status" class="connecting" role="status" aria-live="polite" title="Connection status">
           <span class="status-dot" aria-hidden="true"></span>
           <span class="status-text">Connecting...</span>
         </span>
-        <button class="header-btn" id="disconnect-btn" title="Disconnect" aria-label="Disconnect from server" style="display:none;"><i data-lucide="power"></i></button>
+        <button class="header-btn" id="disconnect-btn" title="Disconnect" aria-label="Disconnect from server" style="display:none;"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.77.04" /></svg></button>
       </div>
     </header>
 
@@ -55,24 +53,24 @@
       <button class="toolbar-btn" data-key="Escape">Esc</button>
       <button class="toolbar-btn" data-key="Tab">Tab</button>
       <span class="toolbar-separator"></span>
-      <button class="toolbar-btn" data-key="ArrowUp"><i data-lucide="arrow-up"></i></button>
-      <button class="toolbar-btn" data-key="ArrowDown"><i data-lucide="arrow-down"></i></button>
-      <button class="toolbar-btn" data-key="ArrowLeft"><i data-lucide="arrow-left"></i></button>
-      <button class="toolbar-btn" data-key="ArrowRight"><i data-lucide="arrow-right"></i></button>
+      <button class="toolbar-btn" data-key="ArrowUp"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg></button>
+      <button class="toolbar-btn" data-key="ArrowDown"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></svg></button>
+      <button class="toolbar-btn" data-key="ArrowLeft"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg></button>
+      <button class="toolbar-btn" data-key="ArrowRight"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg></button>
       <span class="toolbar-separator"></span>
       <button class="toolbar-btn" data-sequence="ctrl+c">^C</button>
       <button class="toolbar-btn" data-sequence="ctrl+d">^D</button>
       <button class="toolbar-btn" data-sequence="ctrl+z">^Z</button>
       <span class="toolbar-spacer"></span>
-      <button class="toolbar-btn icon" id="font-decrease" title="Decrease font"><i data-lucide="a-arrow-down"></i></button>
-      <button class="toolbar-btn icon" id="font-increase" title="Increase font"><i data-lucide="a-arrow-up"></i></button>
+      <button class="toolbar-btn icon" id="font-decrease" title="Decrease font"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 12 4 4 4-4" /><path d="M18 16V7" /><path d="m2 16 4.039-9.69a.5.5 0 0 1 .923 0L11 16" /><path d="M3.304 13h6.392" /></svg></button>
+      <button class="toolbar-btn icon" id="font-increase" title="Increase font"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 11 4-4 4 4" /><path d="M18 16V7" /><path d="m2 16 4.039-9.69a.5.5 0 0 1 .923 0L11 16" /><path d="M3.304 13h6.392" /></svg></button>
     </div>
 
     <!-- Terminal container -->
     <main id="terminal-container" role="main">
       <div id="terminal" aria-label="Terminal output"></div>
       <button id="scroll-to-bottom" class="scroll-hidden" title="Scroll to bottom" aria-label="Scroll to bottom">
-        <i data-lucide="arrow-down-to-line"></i>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17V3" /><path d="m6 11 6 6 6-6" /><path d="M19 21H5" /></svg>
       </button>
       <div id="no-session" class="hidden">
         <div class="no-session-content">
@@ -91,7 +89,7 @@
       <div class="settings-content">
         <div class="settings-header">
           <h3>Settings</h3>
-          <button id="settings-close" class="settings-close"><i data-lucide="x"></i></button>
+          <button id="settings-close" class="settings-close"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
         </div>
         <div class="settings-section">
           <label>Quick Commands</label>
@@ -135,10 +133,6 @@
     <div id="toast-container" aria-live="polite" aria-relevant="additions"></div>
   </div>
 
-  <script src="terminal.js?v=18"></script>
-  <script>
-    // Initialize Lucide icons
-    lucide.createIcons();
-  </script>
+  <script src="terminal.js?v=19"></script>
 </body>
 </html>
