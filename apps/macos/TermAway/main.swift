@@ -117,18 +117,34 @@ class UpdateChecker {
     /// worth not writing, and it brings emphasis, code spans and links along.
     /// The full-document parser is the wrong tool: it drops the newlines
     /// between blocks, so reassembling paragraphs costs more than this.
+    ///
+    /// Emphasis needs no help here: the parser marks it as an inline
+    /// presentation intent and the text view resolves that against whatever
+    /// font is set, so assigning the block font over the whole line is enough.
     private static func releaseNotesView(_ markdown: String) -> NSView {
         let body = NSFont.preferredFont(forTextStyle: .body)
         let heading = NSFont.boldSystemFont(ofSize: body.pointSize + 1)
+        let code = NSFont.monospacedSystemFont(ofSize: body.pointSize - 1, weight: .regular)
         let out = NSMutableAttributedString()
+        var inFence = false
 
         for (i, raw) in markdown.components(separatedBy: .newlines).enumerated() {
+            // Release notes do carry fenced code — 1.5.2 documented the OSC
+            // escapes with one. Inside a fence the text is set monospaced and
+            // left unparsed, so backslashes and backticks read as written.
+            if raw.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                inFence.toggle()
+                continue
+            }
             if i > 0 { out.append(NSAttributedString(string: "\n")) }
             var line = raw
             var font = body
             var indent = false
 
-            if let hash = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+            if inFence {
+                font = code
+                indent = true
+            } else if let hash = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
                 line.removeSubrange(hash)
                 font = heading
                 // Air above a heading, but not above the first line.
@@ -144,24 +160,22 @@ class UpdateChecker {
             if indent {
                 let style = NSMutableParagraphStyle()
                 style.headIndent = 14
+                if inFence { style.firstLineHeadIndent = 14 }
                 attrs[.paragraphStyle] = style
             }
 
-            // Inline parsing preserves whitespace so a bullet keeps its space.
-            var opts = AttributedString.MarkdownParsingOptions()
-            opts.interpretedSyntax = .inlineOnlyPreservingWhitespace
-            let parsed = (try? AttributedString(markdown: line, options: opts))
-                ?? AttributedString(line)
-            let piece = NSMutableAttributedString(parsed)
-            piece.addAttributes(attrs, range: NSRange(location: 0, length: piece.length))
-            // Re-apply the block font under any inline emphasis, which the
-            // parser expressed as a trait rather than a concrete font.
-            piece.enumerateAttribute(.font, in: NSRange(location: 0, length: piece.length)) { value, range, _ in
-                guard let f = value as? NSFont else { return }
-                let traits = NSFontManager.shared.traits(of: f)
-                let resolved = NSFontManager.shared.convert(font, toHaveTrait: traits)
-                piece.addAttribute(.font, value: resolved, range: range)
+            let piece: NSMutableAttributedString
+            if inFence {
+                piece = NSMutableAttributedString(string: line)
+            } else {
+                // Inline parsing preserves whitespace so a bullet keeps its space.
+                var opts = AttributedString.MarkdownParsingOptions()
+                opts.interpretedSyntax = .inlineOnlyPreservingWhitespace
+                let parsed = (try? AttributedString(markdown: line, options: opts))
+                    ?? AttributedString(line)
+                piece = NSMutableAttributedString(parsed)
             }
+            piece.addAttributes(attrs, range: NSRange(location: 0, length: piece.length))
             out.append(piece)
         }
 
