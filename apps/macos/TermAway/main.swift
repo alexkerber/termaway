@@ -82,8 +82,16 @@ class UpdateChecker {
     private func showUpdateAlert(release: GitHubRelease) {
         let alert = NSAlert()
         alert.messageText = "Update Available"
-        alert.informativeText = "TermAway \(release.tag_name) is available. You have v\(appVersion).\n\n\(release.body ?? "")"
+        alert.informativeText = "TermAway \(release.tag_name) is available. You have v\(appVersion)."
         alert.alertStyle = .informational
+        // The notes are Markdown, because GitHub renders them. informativeText
+        // is plain text, so "##" and "**" used to show through as themselves —
+        // and the notes are long enough that appending them grew the alert
+        // taller than the screen. Render them, in something that scrolls.
+        if let notes = release.body?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !notes.isEmpty {
+            alert.accessoryView = Self.releaseNotesView(notes)
+        }
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Later")
 
@@ -100,6 +108,89 @@ class UpdateChecker {
                 NSWorkspace.shared.open(releaseURL)
             }
         }
+    }
+
+    /// Render release-note Markdown into a scrolling, read-only text view.
+    ///
+    /// Blocks are handled a line at a time here, and each line's remaining text
+    /// goes through the system's inline Markdown parser — that is the part
+    /// worth not writing, and it brings emphasis, code spans and links along.
+    /// The full-document parser is the wrong tool: it drops the newlines
+    /// between blocks, so reassembling paragraphs costs more than this.
+    ///
+    /// Emphasis needs no help here: the parser marks it as an inline
+    /// presentation intent and the text view resolves that against whatever
+    /// font is set, so assigning the block font over the whole line is enough.
+    private static func releaseNotesView(_ markdown: String) -> NSView {
+        let body = NSFont.preferredFont(forTextStyle: .body)
+        let heading = NSFont.boldSystemFont(ofSize: body.pointSize + 1)
+        let code = NSFont.monospacedSystemFont(ofSize: body.pointSize - 1, weight: .regular)
+        let out = NSMutableAttributedString()
+        var inFence = false
+
+        for (i, raw) in markdown.components(separatedBy: .newlines).enumerated() {
+            // Release notes do carry fenced code — 1.5.2 documented the OSC
+            // escapes with one. Inside a fence the text is set monospaced and
+            // left unparsed, so backslashes and backticks read as written.
+            if raw.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                inFence.toggle()
+                continue
+            }
+            if i > 0 { out.append(NSAttributedString(string: "\n")) }
+            var line = raw
+            var font = body
+            var indent = false
+
+            if inFence {
+                font = code
+                indent = true
+            } else if let hash = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+                line.removeSubrange(hash)
+                font = heading
+                // Air above a heading, but not above the first line.
+                if i > 0 { out.append(NSAttributedString(string: "\n")) }
+            } else if let bullet = line.range(of: #"^\s*[-*]\s+"#, options: .regularExpression) {
+                line.replaceSubrange(bullet, with: "• ")
+                indent = true
+            }
+
+            var attrs: [NSAttributedString.Key: Any] = [
+                .font: font, .foregroundColor: NSColor.labelColor,
+            ]
+            if indent {
+                let style = NSMutableParagraphStyle()
+                style.headIndent = 14
+                if inFence { style.firstLineHeadIndent = 14 }
+                attrs[.paragraphStyle] = style
+            }
+
+            let piece: NSMutableAttributedString
+            if inFence {
+                piece = NSMutableAttributedString(string: line)
+            } else {
+                // Inline parsing preserves whitespace so a bullet keeps its space.
+                var opts = AttributedString.MarkdownParsingOptions()
+                opts.interpretedSyntax = .inlineOnlyPreservingWhitespace
+                let parsed = (try? AttributedString(markdown: line, options: opts))
+                    ?? AttributedString(line)
+                piece = NSMutableAttributedString(parsed)
+            }
+            piece.addAttributes(attrs, range: NSRange(location: 0, length: piece.length))
+            out.append(piece)
+        }
+
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 260))
+        text.isEditable = false
+        text.drawsBackground = false
+        text.textContainerInset = NSSize(width: 4, height: 4)
+        text.textStorage?.setAttributedString(out)
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 420, height: 260))
+        scroll.documentView = text
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        text.autoresizingMask = [.width]
+        return scroll
     }
 
     private func showNoUpdateAlert() {
