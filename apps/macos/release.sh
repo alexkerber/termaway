@@ -131,8 +131,56 @@ DMG_STAGE="$BUILD_DIR/dmg"
 rm -rf "$DMG_STAGE"; mkdir -p "$DMG_STAGE"
 cp -R "$APP_PATH" "$DMG_STAGE/"        # stapled app; staple travels with it
 ln -s /Applications "$DMG_STAGE/Applications"
+mkdir -p "$DMG_STAGE/.background"
+cp dmg-background.tiff "$DMG_STAGE/.background/background.tiff"
 rm -f "$OUT_DMG"
-hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$OUT_DMG"
+
+# Build read/write first so Finder can be told how to present the window: the
+# positions and background below live in the volume's .DS_Store, which only
+# exists once a Finder window has been arranged on a mounted, writable image.
+# Compressing afterwards preserves it. Sized with headroom — hdiutil refuses to
+# create an image too small for its contents, and the .DS_Store adds to them.
+RW_DMG="$BUILD_DIR/TermAway-rw.dmg"
+rm -f "$RW_DMG"
+STAGE_MB=$(du -sm "$DMG_STAGE" | cut -f1)
+hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov \
+  -format UDRW -size $((STAGE_MB + 50))m "$RW_DMG"
+
+MOUNT_DIR="/Volumes/$APP_NAME"
+hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen >/dev/null
+# The layout is in points and has to match dmg-background.py, which draws the
+# card and the sparkle trail around exactly these two icon centres.
+osascript <<APPLESCRIPT
+tell application "Finder"
+  tell disk "$APP_NAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 120, 840, 540}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 128
+    set text size of opts to 13
+    set background picture of opts to file ".background:background.tiff"
+    set position of item "$APP_NAME.app" of container window to {176, 270}
+    set position of item "Applications" of container window to {464, 270}
+    close
+    open
+    -- Re-assert after the reopen. Closing discards the size Finder has not
+    -- written out yet, and reopening gives the window a default one, which is
+    -- what would otherwise land in .DS_Store — leaving the window wider than
+    -- the background and a band of empty white down the right-hand side.
+    set the bounds of container window to {200, 120, 840, 540}
+    update without registering applications
+    delay 3
+  end tell
+end tell
+APPLESCRIPT
+sync
+hdiutil detach "$MOUNT_DIR" >/dev/null
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" >/dev/null
+rm -f "$RW_DMG"
 
 if [[ "$DO_NOTARIZE" -eq 1 ]]; then
   echo "==> Signing + notarizing DMG"
