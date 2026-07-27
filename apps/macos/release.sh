@@ -131,8 +131,91 @@ DMG_STAGE="$BUILD_DIR/dmg"
 rm -rf "$DMG_STAGE"; mkdir -p "$DMG_STAGE"
 cp -R "$APP_PATH" "$DMG_STAGE/"        # stapled app; staple travels with it
 ln -s /Applications "$DMG_STAGE/Applications"
+mkdir -p "$DMG_STAGE/.background"
+cp dmg-background.tiff "$DMG_STAGE/.background/background.tiff"
 rm -f "$OUT_DMG"
-hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$OUT_DMG"
+
+# Build read/write first so Finder can be told how to present the window: the
+# positions and background below live in the volume's .DS_Store, which only
+# exists once a Finder window has been arranged on a mounted, writable image.
+# Compressing afterwards preserves it. Sized with headroom — hdiutil refuses to
+# create an image too small for its contents, and the .DS_Store adds to them.
+RW_DMG="$BUILD_DIR/TermAway-rw.dmg"
+rm -f "$RW_DMG"
+STAGE_MB=$(du -sm "$DMG_STAGE" | cut -f1)
+hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov \
+  -format UDRW -size $((STAGE_MB + 50))m "$RW_DMG"
+
+# Never assume the volume lands on /Volumes/$APP_NAME. If one of that name is
+# already mounted — a previous run, or the released DMG the user happens to have
+# open — macOS mounts this one as "$APP_NAME 1", and styling, detaching and
+# converting would all address the wrong image. Ask hdiutil where it actually
+# put it.
+ATTACH_PLIST="$BUILD_DIR/attach.plist"
+hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen -plist > "$ATTACH_PLIST"
+MOUNT_DIR=""; DEV_NODE=""
+for i in 0 1 2 3 4 5; do
+  mp=$(/usr/libexec/PlistBuddy -c "Print :system-entities:$i:mount-point" \
+    "$ATTACH_PLIST" 2>/dev/null) || continue
+  [[ -n "$mp" ]] || continue
+  MOUNT_DIR="$mp"
+  DEV_NODE=$(/usr/libexec/PlistBuddy -c "Print :system-entities:$i:dev-entry" \
+    "$ATTACH_PLIST")
+  break
+done
+if [[ -z "$MOUNT_DIR" || -z "$DEV_NODE" ]]; then
+  echo "ERROR: could not find where hdiutil mounted $RW_DMG" >&2
+  exit 1
+fi
+# From here on a failure — a refused Automation prompt, a Finder hang, Ctrl-C —
+# would otherwise leave the writable image mounted for the next run to trip over.
+cleanup_mount() {
+  [[ -n "${DEV_NODE:-}" ]] && hdiutil detach "$DEV_NODE" -force >/dev/null 2>&1
+  return 0
+}
+trap cleanup_mount EXIT
+
+# Finder addresses the volume by the name it was mounted under, which is the
+# mount point's last component and not necessarily $APP_NAME. The .DS_Store is
+# still written into the image, so it applies when a user mounts it later.
+VOL_NAME="$(basename "$MOUNT_DIR")"
+
+# The layout is in points and has to match dmg-background.py, which draws the
+# card and the sparkle trail around exactly these two icon centres.
+osascript <<APPLESCRIPT
+tell application "Finder"
+  tell disk "$VOL_NAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {200, 120, 840, 540}
+    set opts to the icon view options of container window
+    set arrangement of opts to not arranged
+    set icon size of opts to 128
+    set text size of opts to 13
+    set background picture of opts to file ".background:background.tiff"
+    set position of item "$APP_NAME.app" of container window to {176, 270}
+    set position of item "Applications" of container window to {464, 270}
+    close
+    open
+    -- Re-assert after the reopen. Closing discards the size Finder has not
+    -- written out yet, and reopening gives the window a default one, which is
+    -- what would otherwise land in .DS_Store — leaving the window wider than
+    -- the background and a band of empty white down the right-hand side.
+    set the bounds of container window to {200, 120, 840, 540}
+    update without registering applications
+    delay 3
+  end tell
+end tell
+APPLESCRIPT
+sync
+# Detach by device node, not by path: the path can be ambiguous, the node can't.
+hdiutil detach "$DEV_NODE" >/dev/null
+DEV_NODE=""            # detached cleanly, nothing left for the trap to undo
+trap - EXIT
+hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" >/dev/null
+rm -f "$RW_DMG" "$ATTACH_PLIST"
 
 if [[ "$DO_NOTARIZE" -eq 1 ]]; then
   echo "==> Signing + notarizing DMG"
