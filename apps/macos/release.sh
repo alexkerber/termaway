@@ -146,13 +146,45 @@ STAGE_MB=$(du -sm "$DMG_STAGE" | cut -f1)
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov \
   -format UDRW -size $((STAGE_MB + 50))m "$RW_DMG"
 
-MOUNT_DIR="/Volumes/$APP_NAME"
-hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen >/dev/null
+# Never assume the volume lands on /Volumes/$APP_NAME. If one of that name is
+# already mounted — a previous run, or the released DMG the user happens to have
+# open — macOS mounts this one as "$APP_NAME 1", and styling, detaching and
+# converting would all address the wrong image. Ask hdiutil where it actually
+# put it.
+ATTACH_PLIST="$BUILD_DIR/attach.plist"
+hdiutil attach "$RW_DMG" -readwrite -noverify -noautoopen -plist > "$ATTACH_PLIST"
+MOUNT_DIR=""; DEV_NODE=""
+for i in 0 1 2 3 4 5; do
+  mp=$(/usr/libexec/PlistBuddy -c "Print :system-entities:$i:mount-point" \
+    "$ATTACH_PLIST" 2>/dev/null) || continue
+  [[ -n "$mp" ]] || continue
+  MOUNT_DIR="$mp"
+  DEV_NODE=$(/usr/libexec/PlistBuddy -c "Print :system-entities:$i:dev-entry" \
+    "$ATTACH_PLIST")
+  break
+done
+if [[ -z "$MOUNT_DIR" || -z "$DEV_NODE" ]]; then
+  echo "ERROR: could not find where hdiutil mounted $RW_DMG" >&2
+  exit 1
+fi
+# From here on a failure — a refused Automation prompt, a Finder hang, Ctrl-C —
+# would otherwise leave the writable image mounted for the next run to trip over.
+cleanup_mount() {
+  [[ -n "${DEV_NODE:-}" ]] && hdiutil detach "$DEV_NODE" -force >/dev/null 2>&1
+  return 0
+}
+trap cleanup_mount EXIT
+
+# Finder addresses the volume by the name it was mounted under, which is the
+# mount point's last component and not necessarily $APP_NAME. The .DS_Store is
+# still written into the image, so it applies when a user mounts it later.
+VOL_NAME="$(basename "$MOUNT_DIR")"
+
 # The layout is in points and has to match dmg-background.py, which draws the
 # card and the sparkle trail around exactly these two icon centres.
 osascript <<APPLESCRIPT
 tell application "Finder"
-  tell disk "$APP_NAME"
+  tell disk "$VOL_NAME"
     open
     set current view of container window to icon view
     set toolbar visible of container window to false
@@ -178,9 +210,12 @@ tell application "Finder"
 end tell
 APPLESCRIPT
 sync
-hdiutil detach "$MOUNT_DIR" >/dev/null
+# Detach by device node, not by path: the path can be ambiguous, the node can't.
+hdiutil detach "$DEV_NODE" >/dev/null
+DEV_NODE=""            # detached cleanly, nothing left for the trap to undo
+trap - EXIT
 hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" >/dev/null
-rm -f "$RW_DMG"
+rm -f "$RW_DMG" "$ATTACH_PLIST"
 
 if [[ "$DO_NOTARIZE" -eq 1 ]]; then
   echo "==> Signing + notarizing DMG"
