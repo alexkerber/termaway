@@ -52,6 +52,13 @@ try {
   assert.ok(sm.info("app.web").isTmux, "session should be tmux-backed");
   await expectSessions(["app%2Eweb"], "dot must be encoded");
 
+  // --- the shell sees the agent hook env ----------------------------------
+  // The shell is a child of the tmux server, not of our PTY, so only
+  // new-session -e gets these to it.
+  const shellEnv = (key) => sm._tmuxResult("show-environment", "-t", "=app%2Eweb", key).stdout.trim();
+  assert.equal(shellEnv("TERMAWAY_SESSION"), "TERMAWAY_SESSION=app.web", "hook needs the session name");
+  assert.equal(shellEnv("TERMAWAY_URL"), `TERMAWAY_URL=http://127.0.0.1:${PORT}`, "hook needs the server URL");
+
   // --- no window where the session does not exist yet ---------------------
   // The tmux session is created synchronously, so a kill that lands in the
   // same tick still finds it. If creation were left to the PTY, tmux would

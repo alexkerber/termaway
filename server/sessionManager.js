@@ -214,7 +214,8 @@ class Session {
 // =============================================================================
 
 class SessionManager {
-  constructor({ port = 0 } = {}) {
+  constructor({ port = 0, agentUrl = `http://127.0.0.1:${port}` } = {}) {
+    this.agentUrl = agentUrl;
     this.sessions = new Map();
     this.clipboard = "";
     // Set by index.js before shutdown so tmux sessions are left running.
@@ -322,9 +323,16 @@ class SessionManager {
   // Session Lifecycle
   // ---------------------------------------------------------------------------
 
+  // Tells an agent hook inside the session where this server is (http or https)
+  // and which session to flag. shortcut: a rename leaves the old name in the running
+  // shell, so the hook falls back to a plain banner; fix if renames turn out common.
+  _agentEnv(name) {
+    return { TERMAWAY_SESSION: name, TERMAWAY_URL: this.agentUrl };
+  }
+
   // Spawn the PTY backing a session: a tmux client when the session is
   // persistent, the login shell otherwise.
-  _spawnPty(tmuxName) {
+  _spawnPty(tmuxName, name) {
     const [file, args] = tmuxName
       ? // Attach only. The session is created up front by create(), so this
         // never has to decide whether one should exist.
@@ -344,6 +352,9 @@ class SessionManager {
         LC_ALL: process.env.LC_ALL || process.env.LANG || "en_US.UTF-8",
         // Suppress zsh's PROMPT_SP (the % character shown when output lacks newline)
         PROMPT_EOL_MARK: "",
+        // A tmux shell gets these from new-session -e instead; this env only
+        // reaches the tmux client.
+        ...this._agentEnv(name),
       },
     });
   }
@@ -351,7 +362,7 @@ class SessionManager {
   // Wire a Session around a freshly spawned PTY. Shared by create() and by
   // adoption, which must not create anything.
   _register(name, tmuxName, ephemeral) {
-    const session = new Session(name, this._spawnPty(tmuxName), ephemeral);
+    const session = new Session(name, this._spawnPty(tmuxName, name), ephemeral);
     session.tmuxName = tmuxName;
     session.lastSpawnAt = Date.now();
     this.sessions.set(name, session);
@@ -372,7 +383,10 @@ class SessionManager {
     // with `new-session -A` leaves a window where the session does not exist
     // yet: an immediate kill or rename would silently miss, and tmux would then
     // finish creating it — orphaning a session that gets adopted on next start.
-    if (tmuxName) this._tmux("new-session", "-d", "-s", tmuxName);
+    if (tmuxName) {
+      const env = Object.entries(this._agentEnv(name)).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+      this._tmux("new-session", "-d", "-s", tmuxName, ...env);
+    }
 
     let session;
     try {
@@ -866,7 +880,7 @@ class SessionManager {
 
     console.log(`Reattaching tmux session "${session.name}"`);
     try {
-      session.pty = this._spawnPty(session.tmuxName);
+      session.pty = this._spawnPty(session.tmuxName, session.name);
       // A new PTY is a new stream; a fragment from the old one would splice
       // onto it and invent a sequence that was never sent.
       session.oscCarry = "";

@@ -96,6 +96,13 @@ don't parse — kitty's OSC 99, other OSC 1337 forms — no longer rings a gener
 bell the way it used to. That is right for window titles and wrong for a kitty
 user; add the code to `OSC_NOTIFICATION` if one shows up.
 
+Every session's shell gets `TERMAWAY_SESSION` and `TERMAWAY_URL` (through
+`new-session -e` in tmux mode, where the shell is the tmux server's child), so a
+hook can flag its own session. The macOS menu's "Install Agent Hooks..." adds a
+Stop hook (and Claude Code's Notification hook) that curls `/api/notify` with
+them; outside TermAway the variable is unset and the hook does nothing. After a
+rename the shell still holds the old name, so the hook falls back to a plain banner.
+
 An OSC notification can be driven by whatever is on the terminal — a remote host,
 a file being `cat`'d — so unlike the loopback hook it is rate-limited per session.
 

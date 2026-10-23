@@ -259,6 +259,103 @@ enum KeychainHelper {
     }
 }
 
+// MARK: - Agent Hooks
+/// Adds a hook to Claude Code and Codex that flags the TermAway session the
+/// agent runs in. The server puts TERMAWAY_SESSION and TERMAWAY_URL in every
+/// session's environment, so the hook does nothing anywhere else.
+enum AgentHooks {
+    struct Target {
+        let agent: String
+        let file: String
+        /// Hook event name → notification title.
+        let events: [(event: String, title: String)]
+    }
+
+    /// The agents whose config directory exists; there is no point teaching an
+    /// agent that isn't installed.
+    static func targets(home: String = NSHomeDirectory()) -> [Target] {
+        [
+            Target(agent: "Claude Code", file: "\(home)/.claude/settings.json",
+                   events: [("Stop", "Claude Code finished"), ("Notification", "Claude Code needs you")]),
+            Target(agent: "Codex", file: "\(home)/.codex/hooks.json",
+                   events: [("Stop", "Codex finished")]),
+        ].filter { FileManager.default.fileExists(atPath: ($0.file as NSString).deletingLastPathComponent) }
+    }
+
+    /// A dumb curl that never fails the agent. Session names are limited to
+    /// letters, digits, - _ . and space, so they need no JSON escaping. -k
+    /// accepts the server's self-signed certificate when it runs TLS; the URL is
+    /// always loopback, so there is no one in between to check for.
+    static func command(title: String) -> String {
+        #"[ -n "$TERMAWAY_SESSION" ] && curl -sk -m 2 -X POST "${TERMAWAY_URL:-http://127.0.0.1:3000}/api/notify" -H 'Content-Type: application/json' -d "{\"session\":\"$TERMAWAY_SESSION\",\"title\":\"\#(title)\"}" >/dev/null 2>&1; exit 0"#
+    }
+
+    /// Events of a target that don't have our hook yet. Throws when the file
+    /// exists but isn't a JSON object: never overwrite what we couldn't read.
+    static func missing(in target: Target) throws -> [(event: String, title: String)] {
+        let hooks = try hooksObject(read(target.file), target.file)
+        return try target.events.filter { event, _ in
+            let groups = try groupList(hooks, event, target.file)
+            return !groups.contains { group in
+                (group["hooks"] as? [[String: Any]] ?? []).contains {
+                    ($0["command"] as? String)?.contains("TERMAWAY_SESSION") == true
+                }
+            }
+        }
+    }
+
+    /// Appends our hook for each missing event, leaving every other key and
+    /// hook alone, and keeps the previous file next to it as .termaway-backup.
+    static func install(_ target: Target) throws {
+        let todo = try missing(in: target)
+        guard !todo.isEmpty else { return }
+        var json = try read(target.file)
+        var hooks = try hooksObject(json, target.file)
+        for (event, title) in todo {
+            var groups = try groupList(hooks, event, target.file)
+            groups.append(["hooks": [["type": "command", "command": command(title: title), "timeout": 5]]])
+            hooks[event] = groups
+        }
+        json["hooks"] = hooks
+
+        let fm = FileManager.default
+        let backup = target.file + ".termaway-backup"
+        if fm.fileExists(atPath: target.file) {
+            try? fm.removeItem(atPath: backup)
+            try fm.copyItem(atPath: target.file, toPath: backup)
+        }
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: URL(fileURLWithPath: target.file), options: .atomic)
+    }
+
+    // An absent key is empty; a present key of another shape is something we
+    // don't understand, and replacing it would delete the user's settings.
+    private static func hooksObject(_ json: [String: Any], _ file: String) throws -> [String: Any] {
+        guard let raw = json["hooks"] else { return [:] }
+        guard let hooks = raw as? [String: Any] else { throw unreadable(file, "\"hooks\" is not an object") }
+        return hooks
+    }
+
+    private static func groupList(_ hooks: [String: Any], _ event: String, _ file: String) throws -> [[String: Any]] {
+        guard let raw = hooks[event] else { return [] }
+        guard let groups = raw as? [[String: Any]] else { throw unreadable(file, "\"hooks.\(event)\" is not a list of objects") }
+        return groups
+    }
+
+    private static func unreadable(_ file: String, _ reason: String) -> NSError {
+        NSError(domain: "AgentHooks", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(file): \(reason)"])
+    }
+
+    private static func read(_ file: String) throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: file) else { return [:] }
+        guard let data = FileManager.default.contents(atPath: file),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw unreadable(file, "not a JSON object")
+        }
+        return json
+    }
+}
+
 // MARK: - Display Mode
 enum DisplayMode: String, CaseIterable {
     case menuBarOnly = "Menu Bar Only"
@@ -563,6 +660,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         // Preferences
         menu.addItem(NSMenuItem(title: "Preferences", action: #selector(showPreferences), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Install Agent Hooks...", action: #selector(installAgentHooks), keyEquivalent: ""))
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -866,6 +964,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Preferences", action: #selector(showPreferences), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Install Agent Hooks...", action: #selector(installAgentHooks), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
     }
@@ -901,6 +1000,58 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject, NSMenuDele
         }
         preferencesWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Says exactly which files change before touching them: these are the
+    /// user's own agent configs, outside anything TermAway owns.
+    @objc func installAgentHooks() {
+        let targets = AgentHooks.targets()
+        var plan: [(AgentHooks.Target, [String])] = []
+        for target in targets {
+            do {
+                let events = try AgentHooks.missing(in: target).map(\.event)
+                if !events.isEmpty { plan.append((target, events)) }
+            } catch {
+                showAlert(message: "Left \(target.agent) alone: \(error.localizedDescription)")
+                return
+            }
+        }
+
+        guard !plan.isEmpty else {
+            showAlert(message: targets.isEmpty
+                ? "Neither Claude Code nor Codex is installed for this user."
+                : "Agent hooks are already installed.")
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Install Agent Hooks?"
+        alert.informativeText =
+            "Your phone gets a notification on the right session when an agent running in TermAway finishes or needs you.\n\n"
+            + plan.map { target, events in
+                "\(target.agent): adds a \(events.joined(separator: " and ")) hook to \((target.file as NSString).abbreviatingWithTildeInPath)"
+            }.joined(separator: "\n")
+            + "\n\nNothing else in those files changes, and the old file is kept next to it as .termaway-backup."
+        alert.addButton(withTitle: "Install")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        for (target, _) in plan {
+            do {
+                try AgentHooks.install(target)
+            } catch {
+                showAlert(message: "Could not update \(target.file): \(error.localizedDescription)")
+                return
+            }
+        }
+        // Codex skips a new hook until it's reviewed; saying "may ask" would
+        // leave the user waiting for notifications that never come.
+        let codexNote = plan.contains { $0.0.agent == "Codex" }
+            ? "\n\nCodex runs the hook only after you trust it: start Codex, type /hooks and approve the TermAway hook." : ""
+        let done = NSAlert()
+        done.messageText = "Agent Hooks Installed"
+        done.informativeText = "Agents you start from now on notify your devices. Sessions opened before this version of TermAway don't carry the session name, so open a new one.\(codexNote)"
+        done.runModal()
     }
 
     @objc func quit() {
