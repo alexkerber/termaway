@@ -450,6 +450,17 @@ class ConnectionManager: ObservableObject {
             // Clipboard was successfully set on server
             return
 
+        case "uploaded":
+            if let path = json["path"] as? String {
+                finishUpload(json["requestId"] as? String, .success(path))
+            }
+            return
+
+        case "upload-failed":
+            finishUpload(json["requestId"] as? String,
+                         .failure(UploadError(message: json["message"] as? String ?? "The photo wasn't saved")))
+            return
+
         case "client-connected":
             // Another client connected to the server
             if let clientIP = json["clientIP"] as? String,
@@ -714,6 +725,38 @@ class ConnectionManager: ObservableObject {
 
     func requestClipboard() {
         sendMessage(["type": "clipboard-get"])
+    }
+
+    // MARK: - Photo Upload
+
+    struct UploadError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    /// Photo uploads waiting for the server's reply, by request id.
+    private var pendingUploads: [String: (Result<String, Error>) -> Void] = [:]
+
+    /// Sends a JPEG or PNG to the server's inbox and completes with its absolute
+    /// path on the server, ready to put in a prompt.
+    func uploadImage(_ data: Data, completion: @escaping (Result<String, Error>) -> Void) {
+        guard isConnected else {
+            completion(.failure(UploadError(message: "Not connected")))
+            return
+        }
+        let id = UUID().uuidString
+        pendingUploads[id] = completion
+        sendMessage(["type": "upload", "requestId": id, "data": data.base64EncodedString()])
+        // A dropped socket or a server too old to know "upload" never answers;
+        // don't leave the composer waiting forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            self?.finishUpload(id, .failure(UploadError(message: "The server didn't answer. It may need updating.")))
+        }
+    }
+
+    private func finishUpload(_ id: String?, _ result: Result<String, Error>) {
+        guard let id, let completion = pendingUploads.removeValue(forKey: id) else { return }
+        completion(result)
     }
 
     func syncLocalClipboard() {

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftTerm
 import UIKit
+import PhotosUI
 
 struct TerminalContainerView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
@@ -156,6 +157,10 @@ struct ShortcutsToolbarView: View {
     @State private var draft = ""
     @State private var composerError: String?
     @FocusState private var composerFocused: Bool
+    // A photo goes to the server's inbox and its path into the draft, which is
+    // how Claude Code and most agents take an image.
+    @State private var photoItem: PhotosPickerItem?
+    @State private var isUploadingPhoto = false
 
     private var draftIsEmpty: Bool {
         draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -438,6 +443,23 @@ struct ShortcutsToolbarView: View {
     @ViewBuilder
     private var composerInputRow: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                Group {
+                    if isUploadingPhoto {
+                        ProgressView().tint(iconColor)
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(iconColor.opacity(0.5))
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .overlay(Circle().strokeBorder(iconColor.opacity(0.25), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isUploadingPhoto)
+            .accessibilityLabel("Attach photo")
+
             TextField("Message or prompt…", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
@@ -461,9 +483,63 @@ struct ShortcutsToolbarView: View {
                 )
                 .environment(\.colorScheme, themeManager.isChromeLightMode ? .light : .dark)
 
-            accentCircleButton(icon: "arrow.up", filled: !draftIsEmpty, action: sendDraft)
-                .disabled(draftIsEmpty)
+            // Sending mid-upload would fire the prompt without its image.
+            accentCircleButton(icon: "arrow.up", filled: !draftIsEmpty && !isUploadingPhoto, action: sendDraft)
+                .disabled(draftIsEmpty || isUploadingPhoto)
         }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            photoItem = nil
+            attachPhoto(item)
+        }
+    }
+
+    private func attachPhoto(_ item: PhotosPickerItem) {
+        isUploadingPhoto = true
+        let session = sessionName
+        Task {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let jpeg = await Task.detached(operation: { Self.jpegForUpload(data) }).value else {
+                isUploadingPhoto = false
+                withAnimation { composerError = "Couldn’t read that photo." }
+                return
+            }
+            connectionManager.uploadImage(jpeg) { result in
+                isUploadingPhoto = false
+                switch result {
+                case .success(let path):
+                    // The stored draft, not @State: a session switch or a fold
+                    // can tear this view down before the server answers.
+                    let current = connectionManager.loadDraft(for: session)
+                    let separator = current.isEmpty || current.last?.isWhitespace == true ? "" : " "
+                    let updated = current + separator + path + " "
+                    connectionManager.saveDraft(updated, for: session)
+                    draft = updated
+                    composerError = nil
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                case .failure(let error):
+                    withAnimation { composerError = error.localizedDescription }
+                }
+            }
+        }
+    }
+
+    /// A JPEG whose base64 fits the server's 1MB message cap. 1600px on the long
+    /// edge loses nothing an agent reads: Claude Code downsamples past ~1568px.
+    /// Runs off the main actor; decoding a 48MP photo would freeze the UI.
+    nonisolated static func jpegForUpload(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let scale = min(1, 1600 / max(image.size.width, image.size.height))
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        for quality in [0.8, 0.6, 0.4, 0.25] {
+            if let data = resized.jpegData(compressionQuality: quality), data.count <= 700_000 { return data }
+        }
+        return nil
     }
 
     private func sendDraft() {

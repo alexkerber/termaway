@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { Bonjour } from "bonjour-service";
 import { execFile, execFileSync } from "child_process";
 import SessionManager from "./sessionManager.js";
+import { saveImage } from "./inbox.js";
 
 // Timing-safe password comparison to prevent timing attacks
 function safeCompare(a, b) {
@@ -550,6 +551,10 @@ function handleMessage(ws, msg) {
         handleClipboardGet(ws);
         break;
 
+      case "upload":
+        handleUpload(ws, msg.data, msg.requestId);
+        break;
+
       case "list-clients":
         handleListClients(ws);
         break;
@@ -929,6 +934,26 @@ function handleDetach(ws, name = null) {
  * Set clipboard content
  */
 const MAX_CLIPBOARD_SIZE = 1024 * 1024; // 1MB limit
+
+/**
+ * Save a photo from a client to the inbox and tell only that client the path,
+ * which it puts in its prompt for an agent to read. The 1MB message cap bounds
+ * the size; the client shrinks photos to fit.
+ */
+function handleUpload(ws, data, requestId) {
+  const id = typeof requestId === "string" ? requestId.slice(0, 64) : null;
+  let reply;
+  try {
+    const file = saveImage(data);
+    reply = file
+      ? { type: "uploaded", requestId: id, path: file }
+      : { type: "upload-failed", requestId: id, message: "Only JPEG or PNG images can be sent" };
+  } catch (error) {
+    console.error("Upload failed:", error.message);
+    reply = { type: "upload-failed", requestId: id, message: "The server couldn't save the image" };
+  }
+  ws.send(JSON.stringify(reply));
+}
 
 function handleClipboardSet(ws, content) {
   if (typeof content !== "string") {
