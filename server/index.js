@@ -179,7 +179,11 @@ const server = tlsOptions
 const wss = new WebSocketServer({ server });
 
 // Initialize session manager
-const sessionManager = new SessionManager({ port: PORT });
+// Agent hooks reach /api/notify over loopback with the same scheme the server speaks.
+const sessionManager = new SessionManager({
+  port: PORT,
+  agentUrl: `${tlsOptions ? "https" : "http"}://127.0.0.1:${PORT}`,
+});
 
 // Fan out attention changes: an `attention` event drives a local notification
 // on clients, and a refreshed session list keeps the badge in sync. Passive
