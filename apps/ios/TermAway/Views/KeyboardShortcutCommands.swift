@@ -112,6 +112,7 @@ struct KeyboardShortcutHandler: ViewModifier {
     @Binding var showingNewSession: Bool
     @Binding var showingSettings: Bool
     @Binding var showingKillConfirmation: Bool
+    let usesSplitPanes: Bool
 
     func body(content: Content) -> some View {
         content
@@ -153,6 +154,8 @@ struct KeyboardShortcutHandler: ViewModifier {
             .onChange(of: shortcutState.cycleSplitLayoutRequested) { _, newValue in
                 if newValue {
                     shortcutState.cycleSplitLayoutRequested = false
+                    // Panes only exist in the split layout; the compact one would hide them.
+                    guard usesSplitPanes else { return }
                     let nextLayout = splitPaneManager.cycleLayout()
                     cycleSplitLayout(to: nextLayout)
                 }
@@ -160,6 +163,7 @@ struct KeyboardShortcutHandler: ViewModifier {
             .onChange(of: shortcutState.focusNextPaneRequested) { _, newValue in
                 if newValue {
                     shortcutState.focusNextPaneRequested = false
+                    guard usesSplitPanes else { return }
                     splitPaneManager.focusNextPane()
                     // Update active session for input routing
                     if let sessionName = splitPaneManager.focusedSessionName {
@@ -170,6 +174,7 @@ struct KeyboardShortcutHandler: ViewModifier {
             .onChange(of: shortcutState.focusPreviousPaneRequested) { _, newValue in
                 if newValue {
                     shortcutState.focusPreviousPaneRequested = false
+                    guard usesSplitPanes else { return }
                     splitPaneManager.focusPreviousPane()
                     if let sessionName = splitPaneManager.focusedSessionName {
                         connectionManager.setActiveSession(sessionName)
@@ -183,7 +188,7 @@ struct KeyboardShortcutHandler: ViewModifier {
                     guard index >= 1, index <= sessions.count else { return }
                     let session = sessions[index - 1]
                     connectionManager.attachToSession(session.name)
-                    if UIDevice.current.userInterfaceIdiom == .pad {
+                    if usesSplitPanes {
                         splitPaneManager.attachSessionToFocused(session.name)
                         connectionManager.setActiveSession(session.name)
                     }
@@ -224,13 +229,15 @@ extension View {
         shortcutState: KeyboardShortcutState,
         showingNewSession: Binding<Bool>,
         showingSettings: Binding<Bool>,
-        showingKillConfirmation: Binding<Bool>
+        showingKillConfirmation: Binding<Bool>,
+        usesSplitPanes: Bool
     ) -> some View {
         modifier(KeyboardShortcutHandler(
             shortcutState: shortcutState,
             showingNewSession: showingNewSession,
             showingSettings: showingSettings,
-            showingKillConfirmation: showingKillConfirmation
+            showingKillConfirmation: showingKillConfirmation,
+            usesSplitPanes: usesSplitPanes
         ))
     }
 }
