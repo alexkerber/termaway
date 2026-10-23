@@ -167,6 +167,7 @@ Client → Server:
 - `list` - get all sessions
 - `auth` - authentication
 - `clipboard-set` / `clipboard-get` - clipboard sync
+- `upload` - a JPEG or PNG (base64) from the composer; saved to `~/.termaway/inbox/`
 
 Server → Client:
 
@@ -176,6 +177,7 @@ Server → Client:
 - `auth-required` / `auth-success` / `auth-failed` - authentication
 - `client-connected` / `client-disconnected` - connection notifications
 - `clipboard-update` / `clipboard-content` - clipboard sync
+- `uploaded` / `upload-failed` - the saved file's path, sent only to the uploader
 - `error` - error messages
 
 ## iOS Development
