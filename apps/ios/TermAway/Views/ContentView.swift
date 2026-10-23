@@ -97,6 +97,8 @@ struct ContentView: View {
     /// Per-window session binding for multi-window support on iPadOS.
     /// Each window independently tracks which session it displays.
     @Binding var windowSessionName: String?
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var showingServerSheet = false
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var passwordInput = ""
@@ -114,8 +116,11 @@ struct ContentView: View {
         Group {
             // Show sessions when connected AND (authenticated OR no auth required)
             if connectionManager.isConnected && (connectionManager.isAuthenticated || !connectionManager.authRequired) {
-                // Use NavigationSplitView for iPad, regular NavigationStack for iPhone
-                if UIDevice.current.userInterfaceIdiom == .pad {
+                // Split layout on iPad and on an unfolded iPhone Duo, which is still
+                // idiom .phone but regular both ways. A Pro Max turned landscape is
+                // regular width only, and stays on the compact layout.
+                if UIDevice.current.userInterfaceIdiom == .pad
+                    || (horizontalSizeClass == .regular && verticalSizeClass == .regular) {
                     NavigationSplitView(columnVisibility: $columnVisibility) {
                         SessionSidebarView()
                     } detail: {
@@ -207,7 +212,7 @@ struct SessionSidebarView: View {
     var body: some View {
         List {
             ForEach(connectionManager.sessions) { session in
-                SessionRowView(session: session)
+                SessionRowView(session: session, attachesToPane: true)
                     .listRowBackground(
                         connectionManager.currentSession?.name == session.name
                             ? Color.brandOrange.opacity(0.2)
@@ -269,6 +274,8 @@ struct SessionRowView: View {
     @EnvironmentObject var splitPaneManager: SplitPaneManager
     let session: Session
     var isEditMode: Bool = false
+    /// True in the split layout's sidebar, where a tap fills the focused pane.
+    var attachesToPane: Bool = false
     @State private var showingRenameAlert = false
     @State private var showingDeleteConfirmation = false
     @State private var newName = ""
@@ -333,8 +340,8 @@ struct SessionRowView: View {
                 // Attach to the session on the server
                 connectionManager.attachToSession(session.name)
 
-                // On iPad, assign session to the focused pane
-                if isIPad {
+                // In the split layout, assign session to the focused pane
+                if attachesToPane {
                     splitPaneManager.attachSessionToFocused(session.name)
                     connectionManager.setActiveSession(session.name)
                 }
@@ -363,7 +370,7 @@ struct SessionRowView: View {
                 Button(action: {
                     if !isActive {
                         connectionManager.attachToSession(session.name)
-                        if isIPad {
+                        if attachesToPane {
                             splitPaneManager.attachSessionToFocused(session.name)
                             connectionManager.setActiveSession(session.name)
                         }
@@ -649,6 +656,14 @@ struct TerminalDetailView: View {
                     connectionManager.createPaneSession(name)
                 }
             }
+            // A Duo unfolding mid-session lands here with currentSession already
+            // set, so the onChange above never fires for it.
+            if let name = connectionManager.currentSession?.name {
+                splitPaneManager.setCurrentSession(name)
+            }
+            if let focused = splitPaneManager.focusedSessionName {
+                connectionManager.setActiveSession(focused)
+            }
         }
         .alert("Close Session?", isPresented: $showingKillConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -666,7 +681,8 @@ struct TerminalDetailView: View {
             shortcutState: keyboardShortcutState,
             showingNewSession: $showingNewSession,
             showingSettings: $showingSettings,
-            showingKillConfirmation: $showingKillConfirmation
+            showingKillConfirmation: $showingKillConfirmation,
+            usesSplitPanes: true
         )
         .hideToolbarBackground()
         .preferredColorScheme(themeManager.appearanceMode.colorScheme)
@@ -955,6 +971,11 @@ struct SessionCompactView: View {
             if connectionManager.currentSession == nil, let first = connectionManager.sessions.first {
                 connectionManager.attachToSession(first.name)
             }
+            // Folding a Duo leaves the split view's focused pane active; route
+            // commands back to the one terminal this view shows.
+            if let name = connectionManager.currentSession?.name {
+                connectionManager.setActiveSession(name)
+            }
         }
         .alert("Close Session?", isPresented: $showingKillConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -972,7 +993,8 @@ struct SessionCompactView: View {
             shortcutState: keyboardShortcutState,
             showingNewSession: $showingNewSession,
             showingSettings: $showingSettings,
-            showingKillConfirmation: $showingKillConfirmation
+            showingKillConfirmation: $showingKillConfirmation,
+            usesSplitPanes: false
         )
     }
 }

@@ -40,16 +40,15 @@ struct ThemeSettingsView: View {
                     Text("Changes apply to new terminal sessions")
                 }
 
-                // Focus Indicator Section (iPad only)
-                if UIDevice.current.userInterfaceIdiom == .pad {
-                    Section {
-                        Toggle("Glow Effect", isOn: $themeManager.focusGlowEnabled)
-                        ColorPicker("Color", selection: $themeManager.focusGlowColor, supportsOpacity: false)
-                    } header: {
-                        Label("Focus Indicator", systemImage: "sparkles")
-                    } footer: {
-                        Text(themeManager.focusGlowEnabled ? "Glow highlights the active pane" : "Border highlights the active pane")
-                    }
+                // Every device: split panes also show on a wide iPhone (Duo unfolded),
+                // and a sheet's own size class can't tell us the window behind it.
+                Section {
+                    Toggle("Glow Effect", isOn: $themeManager.focusGlowEnabled)
+                    ColorPicker("Color", selection: $themeManager.focusGlowColor, supportsOpacity: false)
+                } header: {
+                    Label("Focus Indicator", systemImage: "sparkles")
+                } footer: {
+                    Text(themeManager.focusGlowEnabled ? "Glow highlights the active pane" : "Border highlights the active pane")
                 }
 
                 Section {
