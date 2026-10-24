@@ -159,7 +159,8 @@ struct InlineSearchField: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            // The bar buttons it replaces are 44pt; match them.
+            .frame(minHeight: 44)
             .background {
                 if #available(iOS 26.0, *) {
                     Capsule()

@@ -206,8 +206,11 @@ struct LockScreenOverlay: View {
 struct SessionSidebarView: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var splitPaneManager: SplitPaneManager
+    @EnvironmentObject var themeManager: ThemeManager
+    @Environment(\.toolbarVerticalEdge) private var verticalBarEdge
     @State private var showingNewSession = false
     @State private var newSessionName = ""
+    @State private var showingSettings = false
 
     var body: some View {
         List {
@@ -221,7 +224,32 @@ struct SessionSidebarView: View {
             }
         }
         .navigationTitle("Sessions")
-        .toolbar { newSessionToolbarItem }
+        // A large title sits below the bar, which leaves the bar to its four buttons.
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            // Plain toolbar buttons: the system gives them the same glass as its own
+            // sidebar toggle and groups the trailing ones in one capsule.
+            ToolbarItem(placement: .topBarLeading) {
+                Button("New Session", systemImage: "plus") { showingNewSession = true }
+                    .tint(.brandOrange)
+            }
+            // Pane layout and settings sit in the sidebar's bar, leaving the terminal's
+            // own bar to search. Not at the foot: the HIG advises against actions
+            // there, and the keyboard covers it.
+            ToolbarItem(placement: .topBarTrailing) {
+                SplitPaneMenuButton(iconColor: themeManager.chromeIconColor)
+            }
+            // iPhone Duo's column already carries Settings.
+            if verticalBarEdge == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Settings", systemImage: "gearshape.fill") { showingSettings = true }
+                        .tint(themeManager.chromeIconColor)
+                }
+            }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
         .alert("New Session", isPresented: $showingNewSession) {
             TextField("Session name", text: $newSessionName)
             Button("Cancel", role: .cancel) {
@@ -237,34 +265,6 @@ struct SessionSidebarView: View {
                 }
             }
         }
-    }
-
-    // GlassCircleButton rather than a bare toolbar Button: with a navigationTitle
-    // set, the sidebar's bar renders its buttons plain, which left this "+" looking
-    // unlike the identical one in the detail bar. Our own component also centres the
-    // glyph in its circle — the original, sharing an HStack with the title inside one
-    // ToolbarItem, made iOS size a single glass background around both and pushed the
-    // "+" 4pt off-centre.
-    @ToolbarContentBuilder
-    private var newSessionToolbarItem: some ToolbarContent {
-        if #available(iOS 26.0, *) {
-            // The button brings its own glass, and iOS 26 puts every toolbar item on
-            // a shared glass background as well — which drew the "+" inside two
-            // concentric rings. Hide the system's and keep ours, so this button and
-            // the identical one in the detail bar stay the same shape.
-            ToolbarItem(placement: .navigationBarLeading) { newSessionButton }
-                .sharedBackgroundVisibility(.hidden)
-        } else {
-            ToolbarItem(placement: .navigationBarLeading) { newSessionButton }
-        }
-    }
-
-    private var newSessionButton: some View {
-        GlassCircleButton(
-            icon: "plus",
-            color: .brandOrange,
-            action: { showingNewSession = true }
-        )
     }
 }
 
@@ -433,6 +433,19 @@ struct TerminalDetailView: View {
     @EnvironmentObject var splitPaneManager: SplitPaneManager
     @EnvironmentObject var keyboardShortcutState: KeyboardShortcutState
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    // Non-nil where the system puts bars in a vertical column (iPhone Duo).
+    @Environment(\.toolbarVerticalEdge) private var verticalBarEdge
+
+    /// iPhone Duo unfolded upright: status sits top-trailing in an 82pt band, so
+    /// our bar moves up beside it instead of below it.
+    private var liftsBar: Bool {
+        verticalBarEdge == nil && UIDevice.current.userInterfaceIdiom == .phone
+    }
+    // shortcut: measured from a Duo simulator screenshot (status cluster 27–122pt
+    // from the trailing edge, centred 48pt down); statusBarFrame reports 2pt tall.
+    // Re-measure if the status layout changes.
+    private let liftedBarTop: CGFloat = 18
+    private let statusClusterInset: CGFloat = 114
     @State private var showingSettings = false
     @State private var showingNewSession = false
     @State private var showingSplitMenu = false
@@ -464,6 +477,15 @@ struct TerminalDetailView: View {
         return "\(base) · \(index + 1)/\(panes.count)"
     }
 
+    private func openSearch() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showSearch = true
+        }
+        let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
+        let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
+        searchManager.updateSearchableText(from: buffer, session: sessionName)
+    }
+
     var body: some View {
         ZStack {
             Color(uiColor: themeManager.currentTheme.backgroundColor).ignoresSafeArea()
@@ -472,7 +494,61 @@ struct TerminalDetailView: View {
                 // Use SplitTerminalView for split pane support
                 SplitTerminalView()
                     .id(splitPaneManager.focusedSessionName ?? "default")
-                    .navigationBarHidden(true)
+                    // Where the system has a vertical bar column (iPhone Duo), use
+                    // its toolbar so the actions land in that column. Elsewhere our
+                    // own bar below replaces it. The terminal keeps its 44pt top
+                    // inset either way, which leaves room for the floating title.
+                    .navigationBarHidden(verticalBarEdge == nil)
+                    // iPhone Duo unfolded in landscape is idiom .phone, so the split
+                    // view hides the sidebar there; open it once, as an iPad would.
+                    .onChange(of: verticalBarEdge == nil, initial: true) { _, noColumn in
+                        if !noColumn && columnVisibility == .automatic { columnVisibility = .all }
+                    }
+                    .padding(.top, liftsBar ? liftedBarTop + 16 : 0)
+                    .ignoresSafeArea(.container, edges: verticalBarEdge == nil && !liftsBar ? [] : .top)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+                    .toolbar {
+                        if verticalBarEdge != nil, !showSearch {
+                            ToolbarItem(placement: .principal) {
+                                Button {
+                                    withAnimation { columnVisibility = .all }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Text(splitPaneTitle)
+                                            .font(.headline)
+                                            .foregroundColor(iconColor)
+                                            .lineLimit(1)
+                                            // Session names tend to differ at the end ("app-2"), so cut the middle.
+                                            .truncationMode(.middle)
+                                            // A toolbar item is proposed no width: fixedSize keeps the name from
+                                            // collapsing, and the cap keeps a long one clear of the buttons.
+                                            .frame(maxWidth: verticalBarEdge == nil ? 100 : 200)
+                                            .fixedSize()
+                                        ConnectionStatusLabel(isConnected: connectionManager.isConnected)
+                                    }
+                                    .padding(.horizontal, 18)
+                                    // The bar gives a principal item no glass; 44pt matches the trailing group.
+                                    .frame(height: 44)
+                                    .glassEffect(.regular.interactive(), in: .capsule)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .sharedBackgroundVisibility(.hidden)
+                            ToolbarItem(placement: .topBarPinnedTrailing) {
+                                Button("New Session", systemImage: "plus") { showingNewSession = true }
+                                    .tint(iconColor)
+                            }
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Search", systemImage: "magnifyingglass") { openSearch() }
+                                    .tint(iconColor)
+                            }
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Settings", systemImage: "gearshape.fill") { showingSettings = true }
+                                    .tint(iconColor)
+                            }
+                        }
+                    }
 
                 // Custom top bar overlay - only when session active
                 VStack(spacing: 0) {
@@ -491,7 +567,7 @@ struct TerminalDetailView: View {
                                 }
                             )
                             .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
-                        } else {
+                        } else if verticalBarEdge == nil {
                             // Left section (equal width so the center label is
                             // screen-centered): + and session name. The name and the
                             // connection status both reveal the sidebar: this view
@@ -502,12 +578,18 @@ struct TerminalDetailView: View {
                             // the sidebar's own content in a second window — the
                             // iPhone still needs it, the iPad has the real one.
                             HStack(spacing: 10) {
-                                GlassCircleButton(
-                                    icon: "plus",
-                                    color: iconColor,
-                                    lightMode: themeManager.isChromeLightMode,
-                                    action: { showingNewSession = true }
-                                )
+                                // Layout and settings live in the sidebar, so it needs
+                                // a visible way in when it is folded away. Open, the
+                                // sidebar shows the system's own toggle.
+                                if columnVisibility != .all {
+                                    GlassCircleButton(
+                                        icon: "sidebar.left",
+                                        color: iconColor,
+                                        lightMode: themeManager.isChromeLightMode,
+                                        action: { withAnimation { columnVisibility = .all } }
+                                    )
+                                    .accessibilityLabel("Show Sidebar")
+                                }
                                 Button {
                                     withAnimation { columnVisibility = .all }
                                 } label: {
@@ -531,37 +613,26 @@ struct TerminalDetailView: View {
                             .buttonStyle(.plain)
                             .layoutPriority(1)
 
-                            // Right section (equal width): split, search, settings
+                            // Right section (equal width): search. Layout and settings
+                            // live at the foot of the sidebar.
                             HStack(spacing: 10) {
                                 Spacer(minLength: 0)
-                                SplitPaneMenuButton(iconColor: iconColor, lightMode: themeManager.isChromeLightMode)
                                 GlassCircleButton(
                                     icon: "magnifyingglass",
                                     color: iconColor,
                                     lightMode: themeManager.isChromeLightMode,
-                                    action: {
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                            showSearch = true
-                                        }
-                                        let sessionName = splitPaneManager.focusedSessionName ?? connectionManager.currentSession?.name ?? ""
-                                        let buffer = connectionManager.getSessionOutputBuffer(for: sessionName)
-                                        searchManager.updateSearchableText(from: buffer, session: sessionName)
-                                    }
-                                )
-                                GlassCircleButton(
-                                    icon: "gearshape.fill",
-                                    color: iconColor,
-                                    lightMode: themeManager.isChromeLightMode,
-                                    action: { showingSettings = true }
+                                    action: openSearch
                                 )
                             }
+                            .padding(.trailing, liftsBar ? statusClusterInset : 0)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
+                    .padding(.trailing, liftsBar && showSearch ? statusClusterInset : 0)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, verticalBarEdge == nil || showSearch ? 8 : 0)
                     .background {
-                        if themeManager.isChromeLightMode {
+                        if themeManager.isChromeLightMode && (verticalBarEdge == nil || showSearch) {
                             Rectangle()
                                 .fill(.ultraThinMaterial)
                                 .ignoresSafeArea(edges: .top)
@@ -585,6 +656,8 @@ struct TerminalDetailView: View {
 
                     Spacer()
                 }
+                .padding(.top, liftsBar ? liftedBarTop : 0)
+                .ignoresSafeArea(.container, edges: liftsBar ? .top : [])
                 .onReceive(NotificationCenter.default.publisher(for: .toggleTerminalSearch)) { _ in
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         if showSearch {
@@ -694,7 +767,6 @@ struct SplitPaneMenuButton: View {
     @EnvironmentObject var connectionManager: ConnectionManager
     @EnvironmentObject var splitPaneManager: SplitPaneManager
     let iconColor: Color
-    var lightMode: Bool = false
 
     var body: some View {
         Menu {
@@ -724,14 +796,9 @@ struct SplitPaneMenuButton: View {
                 }
             }
         } label: {
-            GlassCircleButton(
-                icon: splitPaneManager.layout.icon,
-                color: iconColor,
-                lightMode: lightMode,
-                action: { }
-            )
-            .allowsHitTesting(false)
+            Label("Layout", systemImage: splitPaneManager.layout.icon)
         }
+        .tint(iconColor)
     }
 
     /// Change layout and auto-create sessions for new panes
@@ -786,6 +853,17 @@ struct SessionCompactView: View {
         themeManager.chromeIconColor
     }
 
+    /// Non-nil where the system draws the toolbar as a vertical column (iPhone Duo).
+    @Environment(\.toolbarVerticalEdge) private var verticalBarEdge
+
+    private func openSearch(in session: Session) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showSearch = true
+        }
+        let buffer = connectionManager.getSessionOutputBuffer(for: session.name)
+        searchManager.updateSearchableText(from: buffer, session: session.name)
+    }
+
     var body: some View {
         ZStack {
             // Terminal background color
@@ -793,91 +871,45 @@ struct SessionCompactView: View {
                 .ignoresSafeArea()
 
             if let currentSession = connectionManager.currentSession {
-                TerminalContainerView(session: currentSession)
+                TerminalContainerView(
+                    session: currentSession,
+                    // With search open the bar empties and shrinks; keep the
+                    // terminal below the search field.
+                    reservesTopBar: showSearch
+                )
+                    // With the buttons in the column, only the title floats at the
+                    // top, so the terminal runs under it.
+                    .ignoresSafeArea(.container, edges: verticalBarEdge == nil ? [] : .top)
                     .id(currentSession.name) // Force new view instance per session
                     .transition(.opacity.animation(.easeInOut(duration: 0.2)))
 
-                // Custom top bar overlay (only when session active)
+                // The bar itself is the system toolbar (below), which iPhone Duo
+                // moves into its status column. Search replaces it inline.
                 VStack {
-                    HStack(spacing: 10) {
-                        if showSearch {
-                            // Inline search field — replaces toolbar buttons
-                            InlineSearchField(
-                                searchManager: searchManager,
-                                iconColor: iconColor,
-                                onDismiss: {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                        showSearch = false
-                                        searchManager.reset()
-                                    }
-                                    NotificationCenter.default.post(name: .dismissTerminalSearch, object: nil)
+                    if showSearch {
+                        InlineSearchField(
+                            searchManager: searchManager,
+                            iconColor: iconColor,
+                            onDismiss: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    showSearch = false
+                                    searchManager.reset()
                                 }
-                            )
-                            .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
-                        } else {
-                            // Left section (equal width so the center label is
-                            // screen-centered): + and session name
-                            HStack(spacing: 10) {
-                                GlassCircleButton(
-                                    icon: "plus",
-                                    color: iconColor,
-                                    lightMode: themeManager.isChromeLightMode,
-                                    action: { showingNewSession = true }
-                                )
-                                Button(action: { showingSessionList = true }) {
-                                    Text(currentSession.name)
-                                        .font(.headline)
-                                        .foregroundColor(iconColor)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                }
-                                .buttonStyle(.plain)
-                                Spacer(minLength: 0)
+                                NotificationCenter.default.post(name: .dismissTerminalSearch, object: nil)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            // Center: connection status as a plain label
-                            Button(action: { showingSessionList = true }) {
-                                ConnectionStatusLabel(isConnected: connectionManager.isConnected)
+                        )
+                        .transition(.scale(scale: 0.3, anchor: .trailing).combined(with: .opacity))
+                        .padding(.horizontal, 16)
+                        // No top padding: the field sits exactly where the bar was.
+                        .padding(.bottom, 8)
+                        .background {
+                            if themeManager.isChromeLightMode {
+                                Rectangle()
+                                    .fill(.ultraThinMaterial)
+                                    .ignoresSafeArea(edges: .top)
                             }
-                            .buttonStyle(.plain)
-                            .layoutPriority(1)
-
-                            // Right section (equal width): search + settings
-                            HStack(spacing: 10) {
-                                Spacer(minLength: 0)
-                                GlassCircleButton(
-                                    icon: "magnifyingglass",
-                                    color: iconColor,
-                                    lightMode: themeManager.isChromeLightMode,
-                                    action: {
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                            showSearch = true
-                                        }
-                                        let buffer = connectionManager.getSessionOutputBuffer(for: currentSession.name)
-                                        searchManager.updateSearchableText(from: buffer, session: currentSession.name)
-                                    }
-                                )
-                                GlassCircleButton(
-                                    icon: "gearshape.fill",
-                                    color: iconColor,
-                                    lightMode: themeManager.isChromeLightMode,
-                                    action: { showingSettings = true }
-                                )
-                            }
-                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background {
-                        if themeManager.isChromeLightMode {
-                            Rectangle()
-                                .fill(.ultraThinMaterial)
-                                .ignoresSafeArea(edges: .top)
-                        }
-                    }
-                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showSearch)
 
                     // Dev-server port chips for the currently viewed session.
                     // Hidden on iPad when a split pane shows a different session,
@@ -934,7 +966,67 @@ struct SessionCompactView: View {
                 }
             }
         }
-        .navigationBarHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
+        // The title floats as its own glass capsule; no band behind it.
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+        .toolbar {
+            if let currentSession = connectionManager.currentSession, !showSearch {
+                // Custom view: stays horizontal, centred, as Apple's Duo rules expect.
+                ToolbarItem(placement: .principal) {
+                    Button(action: { showingSessionList = true }) {
+                        HStack(spacing: 10) {
+                            Text(currentSession.name)
+                                .font(.headline)
+                                .foregroundColor(iconColor)
+                                .lineLimit(1)
+                                // Session names tend to differ at the end ("app-2"), so cut the middle.
+                                .truncationMode(.middle)
+                                // A toolbar item is proposed no width: fixedSize keeps the name from
+                                // collapsing, and the cap keeps a long one clear of the buttons.
+                                .frame(maxWidth: verticalBarEdge == nil ? 100 : 200)
+                                .fixedSize()
+                            ConnectionStatusLabel(isConnected: connectionManager.isConnected)
+                        }
+                        .padding(.horizontal, 18)
+                        // The bar gives a principal item no glass; 44pt matches the trailing group.
+                        .frame(height: 44)
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                // Symbol and title on each, so they can go vertical on iPhone Duo.
+                if verticalBarEdge == nil {
+                    // An iPhone bar is narrow: New Session and Settings go behind More,
+                    // leaving the session name room. Search stays one tap away.
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Search", systemImage: "magnifyingglass") { openSearch(in: currentSession) }
+                            .tint(iconColor)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu("More", systemImage: "ellipsis") {
+                            Button("New Session", systemImage: "plus") { showingNewSession = true }
+                            Button("Settings", systemImage: "gearshape.fill") { showingSettings = true }
+                        }
+                        .tint(iconColor)
+                    }
+                } else {
+                    // The screen's prominent action: first in iPhone Duo's column.
+                    ToolbarItem(placement: .topBarPinnedTrailing) {
+                        Button("New Session", systemImage: "plus") { showingNewSession = true }
+                            .tint(iconColor)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Search", systemImage: "magnifyingglass") { openSearch(in: currentSession) }
+                            .tint(iconColor)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Settings", systemImage: "gearshape.fill") { showingSettings = true }
+                            .tint(iconColor)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showingSessionList) {
             SessionListSheet()
                 .presentationDetents(sessionSheetDetents(for: connectionManager.sessions.count))

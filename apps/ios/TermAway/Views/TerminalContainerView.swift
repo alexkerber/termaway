@@ -8,23 +8,30 @@ struct TerminalContainerView: View {
     @EnvironmentObject var shortcutsManager: ShortcutsManager
     @EnvironmentObject var themeManager: ThemeManager
     let session: Session
+    /// False under a system navigation bar, which insets the content itself.
+    var reservesTopBar = true
     @State private var terminalView: TerminalView?
     @State private var showScrollButton = false
     @State private var keyboardHeight: CGFloat = 0
+    // Owned here so the terminal can make room for the pill above the composer.
+    @State private var shortcutsExpanded = false
     @Namespace private var scrollButtonNamespace
 
     private var iconColor: SwiftUI.Color {
         themeManager.chromeIconColor
     }
 
+    /// The open shortcuts pill: its 44pt height plus the stack's 8pt spacing.
+    private var pillRoom: CGFloat { shortcutsExpanded ? 52 : 0 }
+
     /// Calculate bottom padding based on keyboard and toolbar state
     private func bottomPadding(safeArea: CGFloat) -> CGFloat {
         if keyboardHeight > 0 {
             // Keyboard visible: add space for keyboard + toolbar (toolbar sits above keyboard)
-            return keyboardHeight + (shortcutsManager.showToolbar ? 60 : 20)
+            return keyboardHeight + (shortcutsManager.showToolbar ? 60 : 20) + pillRoom
         } else {
             // No keyboard: normal padding
-            return safeArea + (shortcutsManager.showToolbar ? 60 : 20)
+            return safeArea + (shortcutsManager.showToolbar ? 60 : 20) + pillRoom
         }
     }
 
@@ -40,7 +47,7 @@ struct TerminalContainerView: View {
                     sessionName: session.name
                 )
                 // Extra top room for the port-chip row when this session has ports.
-                .padding(.top, session.ports.isEmpty ? 44 : 80)
+                .padding(.top, (reservesTopBar ? 44 : 0) + (session.ports.isEmpty ? 0 : 36))
                 .padding(.horizontal, 8)
                 .padding(.bottom, bottomPadding(safeArea: geo.safeAreaInsets.bottom))
 
@@ -49,7 +56,8 @@ struct TerminalContainerView: View {
                     ShortcutsToolbarView(
                         terminalView: $terminalView,
                         bottomSafeArea: geo.safeAreaInsets.bottom,
-                        sessionName: session.name
+                        sessionName: session.name,
+                        shortcutsExpanded: $shortcutsExpanded
                     )
                 }
 
@@ -75,9 +83,7 @@ struct TerminalContainerView: View {
             updateScrollState()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
-            if let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                keyboardHeight = frame.height
-            }
+            keyboardHeight = visibleKeyboardHeight(notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardHeight = 0
@@ -150,10 +156,11 @@ struct ShortcutsToolbarView: View {
     @State private var keyboardHeight: CGFloat = 0
     @Namespace private var toolbarNamespace
 
-    // Composer: a multi-line draft box above the shortcuts pill. Return inserts
-    // a newline (impossible in the raw terminal), Send fires draft + Enter.
-    // Drafts persist per session so a long prompt survives a switch away.
-    @State private var composerExpanded = false
+    // Composer: a multi-line draft box, always shown, with the shortcuts pill
+    // folded away above it behind "…". Return inserts a newline (impossible in
+    // the raw terminal), Send fires draft + Enter. Drafts persist per session so
+    // a long prompt survives a switch away.
+    @Binding var shortcutsExpanded: Bool
     @State private var draft = ""
     @State private var composerError: String?
     @FocusState private var composerFocused: Bool
@@ -172,26 +179,30 @@ struct ShortcutsToolbarView: View {
     }
 
     var body: some View {
-        // Composer (when expanded) sits above the shortcuts pill; the whole
-        // stack is pinned to the bottom above the keyboard.
+        // The shortcuts pill (when expanded) opens above the composer, so the field
+        // never moves; the whole stack is pinned to the bottom above the keyboard.
         VStack(spacing: 8) {
             Spacer()
-            if composerExpanded {
-                composerPanel
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            if shortcutsExpanded {
+                toolbarContent
+                    .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
             }
-            toolbarContent
+            composerPanel
         }
-        .padding(.bottom, isKeyboardVisible ? (keyboardHeight + 8) : (bottomSafeArea + 20))
+        // By height, not isKeyboardVisible: a hardware keyboard shows nothing on screen.
+        .padding(.bottom, keyboardHeight > 0 ? (keyboardHeight + 8) : (bottomSafeArea + 20))
         .onAppear { draft = connectionManager.loadDraft(for: sessionName) }
         .onChange(of: draft) { _, newValue in
             connectionManager.saveDraft(newValue, for: sessionName)
             if composerError != nil { withAnimation { composerError = nil } }
         }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            photoItem = nil
+            attachPhoto(item)
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
-            if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-                keyboardHeight = keyboardFrame.height
-            }
+            keyboardHeight = visibleKeyboardHeight(notification)
             withAnimation(liquidAnimation) {
                 isKeyboardVisible = true
                 isToolbarVisible = true
@@ -237,12 +248,8 @@ struct ShortcutsToolbarView: View {
 
     @ViewBuilder
     private var toolbarLayout: some View {
-        // Layout: compose toggle, then the shortcuts pill
-        HStack(alignment: .center, spacing: 8) {
-            composeToggle
-            shortcutsPill
-        }
-        .padding(.horizontal, 16)
+        shortcutsPill
+            .padding(.horizontal, 16)
     }
 
     // A solid accent circle reads far clearer than an orange icon inside glass
@@ -266,25 +273,6 @@ struct ShortcutsToolbarView: View {
                 )
         }
         .buttonStyle(.plain)
-    }
-
-    private var composeToggle: some View {
-        // Solid orange when collapsed (a clear "compose" entry); once open it
-        // becomes the quiet collapse button so the orange Send is the primary.
-        accentCircleButton(
-            icon: composerExpanded ? "keyboard.chevron.compact.down" : "square.and.pencil",
-            filled: !composerExpanded
-        ) {
-            withAnimation(liquidAnimation) {
-                composerExpanded.toggle()
-            }
-            if composerExpanded {
-                // Defer so the TextField exists before we make it first responder.
-                DispatchQueue.main.async { composerFocused = true }
-            } else {
-                composerFocused = false
-            }
-        }
     }
 
     private func toggleKeyboard() {
@@ -356,25 +344,9 @@ struct ShortcutsToolbarView: View {
     @ViewBuilder
     private var shortcutsRow: some View {
             HStack(spacing: 2) {
-                ForEach(shortcutsManager.toolbarShortcuts) { shortcut in
-                    ShortcutKey(
-                        shortcut: shortcut,
-                        isActive: shortcutsManager.ctrlModeActive && shortcut.name == "Ctrl",
-                        iconColor: iconColor
-                    ) {
-                        handleShortcut(shortcut)
-                    }
-                }
-
-                // Keyboard button at the end (optional)
+                // Photo and keyboard lead the keys, set off by a divider.
+                photoButton
                 if shortcutsManager.showKeyboardButton {
-                    // Divider
-                    Rectangle()
-                        .fill(iconColor.opacity(0.3))
-                        .frame(width: 1, height: 20)
-                        .padding(.horizontal, 8)
-
-                    // Keyboard toggle
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         toggleKeyboard()
@@ -386,6 +358,21 @@ struct ShortcutsToolbarView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(ShortcutKeyButtonStyle())
+                    .accessibilityLabel(isKeyboardVisible ? "Hide keyboard" : "Show keyboard")
+                }
+                Rectangle()
+                    .fill(iconColor.opacity(0.3))
+                    .frame(width: 1, height: 20)
+                    .padding(.horizontal, 8)
+
+                ForEach(shortcutsManager.toolbarShortcuts) { shortcut in
+                    ShortcutKey(
+                        shortcut: shortcut,
+                        isActive: shortcutsManager.ctrlModeActive && shortcut.name == "Ctrl",
+                        iconColor: iconColor
+                    ) {
+                        handleShortcut(shortcut)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -440,26 +427,50 @@ struct ShortcutsToolbarView: View {
         .padding(.horizontal, 16)
     }
 
+    /// A key in the shortcuts pill, styled like its neighbours.
+    private var photoButton: some View {
+        PhotosPicker(selection: $photoItem, matching: .images) {
+            Group {
+                if isUploadingPhoto {
+                    ProgressView().tint(iconColor)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(iconColor.opacity(0.85))
+                }
+            }
+            .frame(width: 32, height: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ShortcutKeyButtonStyle())
+        .disabled(isUploadingPhoto)
+        .accessibilityLabel("Attach photo")
+    }
+
+    // Sending mid-upload would fire the prompt without its image.
+    private var canSend: Bool { !draftIsEmpty && !isUploadingPhoto }
+
     @ViewBuilder
     private var composerInputRow: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            PhotosPicker(selection: $photoItem, matching: .images) {
-                Group {
-                    if isUploadingPhoto {
-                        ProgressView().tint(iconColor)
-                    } else {
-                        Image(systemName: "photo")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(iconColor.opacity(0.5))
-                    }
-                }
-                .frame(width: 44, height: 44)
-                .overlay(Circle().strokeBorder(iconColor.opacity(0.25), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .disabled(isUploadingPhoto)
-            .accessibilityLabel("Attach photo")
+        HStack(alignment: .bottom, spacing: 12) {
+            // The shortcuts pill folds away behind this; it starts folded.
+            GlassCircleButton(
+                icon: "ellipsis",
+                size: 44,
+                color: iconColor,
+                lightMode: themeManager.isChromeLightMode,
+                action: { withAnimation(liquidAnimation) { shortcutsExpanded.toggle() } }
+            )
+            .accessibilityLabel(shortcutsExpanded ? "Hide shortcuts" : "Show shortcuts")
 
+            composerField
+        }
+    }
+
+    @ViewBuilder
+    private var composerField: some View {
+        // Send lives inside the field, as in Messages.
+        HStack(alignment: .bottom, spacing: 6) {
             TextField("Message or prompt…", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
@@ -471,26 +482,38 @@ struct ShortcutsToolbarView: View {
                 .font(.system(size: 16))
                 .foregroundStyle(iconColor)
                 .tint(.brandOrange)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.regularMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(iconColor.opacity(0.15), lineWidth: 1)
-                )
-                .environment(\.colorScheme, themeManager.isChromeLightMode ? .light : .dark)
+                .padding(.leading, 14)
+                .padding(.vertical, 12)
 
-            // Sending mid-upload would fire the prompt without its image.
-            accentCircleButton(icon: "arrow.up", filled: !draftIsEmpty && !isUploadingPhoto, action: sendDraft)
-                .disabled(draftIsEmpty || isUploadingPhoto)
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                sendDraft()
+            }) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, canSend ? Color.brandOrange : Color(.systemGray3))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .padding([.trailing, .bottom], 7)
+            .accessibilityLabel("Send")
         }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            photoItem = nil
-            attachPhoto(item)
+        // As tall as the "…" button beside it, growing with more lines.
+        .frame(minHeight: 44)
+        .background { composerFieldBackground }
+        .environment(\.colorScheme, themeManager.isChromeLightMode ? .light : .dark)
+    }
+
+    @ViewBuilder
+    private var composerFieldBackground: some View {
+        // Half the 44pt height: a capsule on one line, as in Messages.
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        if #available(iOS 26.0, *) {
+            shape.fill(.clear).glassEffect(.regular.interactive(), in: shape)
+        } else {
+            shape.fill(.regularMaterial)
+                .overlay(shape.strokeBorder(iconColor.opacity(0.15), lineWidth: 1))
         }
     }
 
@@ -568,7 +591,6 @@ struct ShortcutsToolbarView: View {
         connectionManager.sendInput(body + "\r", to: sessionName)
 
         draft = ""  // onChange clears the persisted draft
-        withAnimation(liquidAnimation) { composerExpanded = false }
         composerFocused = false
     }
 }
@@ -670,6 +692,9 @@ struct TerminalViewRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
         let terminalView = TerminalView(frame: .zero)
+        // The terminal is a UIScrollView; its top edge effect drew a band behind
+        // the floating title.
+        terminalView.topEdgeEffect.isHidden = true
 
         // Configure terminal appearance from theme
         let theme = themeManager.currentTheme
@@ -901,4 +926,13 @@ struct TerminalViewRepresentable: UIViewRepresentable {
             // Not needed
         }
     }
+}
+
+/// How much of the screen the keyboard covers. With a hardware keyboard iOS can
+/// report a full-height frame that sits below the screen, so its height alone
+/// would lift the composer for a keyboard nobody sees.
+private func visibleKeyboardHeight(_ notification: Notification) -> CGFloat {
+    guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return 0 }
+    guard let screen = notification.object as? UIScreen else { return frame.height }
+    return frame.intersection(screen.bounds).height
 }
