@@ -164,8 +164,10 @@ class ConnectionManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                // Resume reconnection if we were trying to reconnect
-                if self?.shouldAutoReconnect == true && self?.isConnected == false {
+                // Resume reconnection if we were trying to reconnect. Not while a
+                // connection is in flight: the reconnect would cancel it.
+                if self?.shouldAutoReconnect == true && self?.isConnected == false
+                    && self?.isConnecting == false {
                     self?.attemptReconnect()
                 }
             }
@@ -193,6 +195,9 @@ class ConnectionManager: ObservableObject {
             return
         }
 
+        // A retry still waiting would cancel this connection when it fires.
+        reconnectTask?.cancel()
+        reconnectTask = nil
         isConnecting = true
         isReconnecting = false
         lastError = nil
@@ -256,9 +261,15 @@ class ConnectionManager: ObservableObject {
     }
 
     private func receiveMessage() {
-        webSocket?.receive { [weak self] result in
+        let socket = webSocket
+        socket?.receive { [weak self] result in
             Task { @MainActor in
                 guard let self = self else { return }
+                // A socket we already replaced reports its own cancellation here.
+                // Treating that as the live one failing scheduled a reconnect that
+                // cancelled the live one, which failed the same way: a reconnect
+                // every second, forever.
+                guard socket === self.webSocket else { return }
 
                 switch result {
                 case .success(let message):
@@ -302,6 +313,9 @@ class ConnectionManager: ObservableObject {
 
         // Cancel any existing reconnect task
         reconnectTask?.cancel()
+        // And the first connect's timeout, which would cut the retry short.
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
 
         isReconnecting = true
         reconnectAttempts += 1
@@ -415,6 +429,12 @@ class ConnectionManager: ObservableObject {
                 // No auth required, we're good
                 isAuthenticated = true
                 sendMessage(["type": "list"])
+                // Re-attach to current session if we had one, as auth-success does.
+                // A tapped notification wins: the list handler attaches its session,
+                // and a late "attached" for this one would switch back.
+                if pendingSessionToOpen == nil, let sessionName = currentSession?.name {
+                    sendMessage(["type": "attach", "name": sessionName])
+                }
                 flushPendingReply()
             }
             return
@@ -426,7 +446,7 @@ class ConnectionManager: ObservableObject {
             // Now request session list
             sendMessage(["type": "list"])
             // Re-attach to current session if we had one
-            if let sessionName = currentSession?.name {
+            if pendingSessionToOpen == nil, let sessionName = currentSession?.name {
                 sendMessage(["type": "attach", "name": sessionName])
             }
             // A reply typed on the lock screen may have been waiting for this.
